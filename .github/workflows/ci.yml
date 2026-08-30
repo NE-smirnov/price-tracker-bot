@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.25.5"
+
+jobs:
+  lint:
+    name: format & lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: gofmt check
+        run: |
+          out="$(gofmt -l $(git ls-files '*.go' | grep -v '^internal/gen/'))"
+          if [ -n "$out" ]; then echo "not formatted:"; echo "$out"; exit 1; fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13.2
+
+      - name: go.mod tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: go test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+      - run: go tool cover -func=coverage.out | tail -1
+
+  build:
+    name: build binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Extend this list as services land: core, scraper, notifier.
+        service: [bot]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: CGO_ENABLED=0 go build -trimpath -o bin/${{ matrix.service }} ./cmd/${{ matrix.service }}

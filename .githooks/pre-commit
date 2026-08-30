@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+#
+# pre-commit: format + static analysis gate for staged changes.
+#
+# Enable once per clone:   make hooks      (sets core.hooksPath=.githooks)
+#
+# Behaviour:
+#   * staged *.go files are auto-formatted (gofmt + goimports) and re-staged
+#   * the whole module must compile; go vet / golangci-lint run on affected packages
+#   * go.mod / go.sum must be tidy
+#   * staged *.proto files are formatted and linted with buf
+#   * obvious secrets, junk files and >1MiB blobs are rejected
+#
+# Escape hatches:
+#   HOOK_NO_FIX=1     -> never rewrite files, only fail on bad formatting
+#   HOOK_SKIP_LINT=1  -> skip golangci-lint (the slowest step)
+#   git commit -n     -> skip the hook entirely
+#
+# Portability: POSIX-ish bash, works on macOS bash 3.2 (no mapfile/readarray).
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+TOOLS_DIR="$REPO_ROOT/.tools"
+PATH="$TOOLS_DIR:$PATH"
+export PATH
+MODULE="github.com/NE-smirnov/price-tracker-bot"
+
+if [ -t 1 ]; then
+  RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; BOLD=$'\033[1m'; RESET=$'\033[0m'
+else
+  RED=''; GREEN=''; YELLOW=''; BOLD=''; RESET=''
+fi
+
+step() { printf '%s==>%s %s\n' "$BOLD" "$RESET" "$1"; }
+ok()   { printf '  %sok%s   %s\n' "$GREEN" "$RESET" "$1"; }
+skip() { printf '  %sskip%s %s\n' "$YELLOW" "$RESET" "$1"; }
+fail() { printf '  %sfail%s %s\n' "$RED" "$RESET" "$1"; }
+
+die() {
+  fail "$1"
+  printf '\n%spre-commit rejected the change.%s Quick fix:\n  make fix\nThen re-stage the files and commit again.\n' "$RED" "$RESET"
+  exit 1
+}
+
+need_tool() { # need_tool <binary> <make-target>
+  command -v "$1" >/dev/null 2>&1 || die "'$1' not found. Run: make $2"
+}
+
+# ------------------------------------------------------------------ staged files
+
+STAGED="$(git diff --cached --name-only --diff-filter=ACMR)"
+
+# Existing, non-generated Go files only.
+GO_FILES=''
+PROTO_FILES=''
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  [ -f "$f" ] || continue
+  case "$f" in
+    internal/gen/*|.tools/*) continue ;;
+  esac
+  case "$f" in
+    *.go)    GO_FILES="${GO_FILES}${f}"$'\n' ;;
+    *.proto) PROTO_FILES="${PROTO_FILES}${f}"$'\n' ;;
+  esac
+done <<EOF
+$STAGED
+EOF
+
+count_lines() { [ -z "$1" ] && echo 0 || printf '%s' "$1" | grep -c '' ; }
+GO_COUNT="$(count_lines "$GO_FILES")"
+PROTO_COUNT="$(count_lines "$PROTO_FILES")"
+
+# ------------------------------------------------------------------ 0. secret / junk guard
+
+step "guard: secrets, junk files, large blobs"
+BLOCKED=0
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "$f" in
+    .env.example) : ;;
+    .env|.env.*|*/.env|*/.env.*|*.pem|*.key|*id_rsa*|*.p12)
+      fail "refusing to commit potential secret: $f"; BLOCKED=1 ;;
+    .DS_Store|*/.DS_Store|*.swp)
+      fail "refusing to commit junk file: $f"; BLOCKED=1 ;;
+  esac
+  if [ -f "$f" ]; then
+    size="$(wc -c <"$f" | tr -d ' ')"
+    if [ "$size" -gt 1048576 ]; then
+      fail "file larger than 1MiB: $f ($size bytes)"; BLOCKED=1
+    fi
+  fi
+done <<EOF
+$STAGED
+EOF
+if [ "$BLOCKED" -ne 0 ]; then
+  printf '\nUnstage them (git restore --staged <file>) or add them to .gitignore.\n'
+  exit 1
+fi
+ok "nothing suspicious staged"
+
+# ------------------------------------------------------------------ 1. go pipeline
+
+if [ "$GO_COUNT" -eq 0 ]; then
+  skip "no staged Go files"
+else
+  step "gofmt + goimports ($GO_COUNT file(s))"
+  need_tool goimports tools
+
+  if [ "${HOOK_NO_FIX:-0}" = "1" ]; then
+    unformatted="$(printf '%s' "$GO_FILES" | xargs gofmt -l; printf '%s' "$GO_FILES" | xargs goimports -local "$MODULE" -l)"
+    [ -n "$unformatted" ] && die "not formatted:"$'\n'"$unformatted"
+    ok "all staged files formatted"
+  else
+    printf '%s' "$GO_FILES" | xargs gofmt -w
+    printf '%s' "$GO_FILES" | xargs goimports -local "$MODULE" -w
+    changed=0
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if ! git diff --quiet -- "$f"; then
+        git add -- "$f"
+        printf '  %sfixed%s %s\n' "$YELLOW" "$RESET" "$f"
+        changed=1
+      fi
+    done <<EOF
+$GO_FILES
+EOF
+    if [ "$changed" -ne 0 ]; then ok "reformatted files re-staged"; else ok "already formatted"; fi
+  fi
+
+  PKGS="$(printf '%s' "$GO_FILES" | xargs -n1 dirname | sort -u | sed 's|^|./|' | tr '\n' ' ')"
+  PKG_COUNT="$(printf '%s' "$PKGS" | wc -w | tr -d ' ')"
+
+  step "go build ./... (compile check)"
+  go build ./... >/dev/null || die "the module does not compile"
+  ok "compiles"
+
+  step "go vet ($PKG_COUNT package(s))"
+  # shellcheck disable=SC2086
+  go vet $PKGS || die "go vet reported problems"
+  ok "vet clean"
+
+  if [ "${HOOK_SKIP_LINT:-0}" = "1" ]; then
+    skip "golangci-lint (HOOK_SKIP_LINT=1)"
+  else
+    step "golangci-lint ($PKG_COUNT package(s))"
+    need_tool golangci-lint tools
+    # shellcheck disable=SC2086
+    golangci-lint run $PKGS || die "golangci-lint reported problems (try: make lint-fix)"
+    ok "lint clean"
+  fi
+
+  step "go mod tidy check"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  cp go.mod "$tmp/go.mod"
+  [ -f go.sum ] && cp go.sum "$tmp/go.sum"
+  go mod tidy
+  tidy_dirty=0
+  diff -q go.mod "$tmp/go.mod" >/dev/null 2>&1 || tidy_dirty=1
+  if [ -f "$tmp/go.sum" ]; then
+    diff -q go.sum "$tmp/go.sum" >/dev/null 2>&1 || tidy_dirty=1
+  elif [ -f go.sum ]; then
+    tidy_dirty=1
+  fi
+  cp "$tmp/go.mod" go.mod
+  [ -f "$tmp/go.sum" ] && cp "$tmp/go.sum" go.sum
+  if [ "$tidy_dirty" -ne 0 ]; then
+    die "go.mod/go.sum are not tidy -> run 'make tidy' and stage the result"
+  fi
+  ok "go.mod/go.sum tidy"
+fi
+
+# ------------------------------------------------------------------ 2. proto pipeline
+
+if [ "$PROTO_COUNT" -eq 0 ]; then
+  skip "no staged .proto files"
+else
+  step "buf format + lint ($PROTO_COUNT file(s))"
+  need_tool buf tools
+  if [ "${HOOK_NO_FIX:-0}" != "1" ]; then
+    buf format -w
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      if [ -f "$f" ] && ! git diff --quiet -- "$f"; then
+        git add -- "$f"
+        printf '  %sfixed%s %s\n' "$YELLOW" "$RESET" "$f"
+      fi
+    done <<EOF
+$PROTO_FILES
+EOF
+  fi
+  buf lint || die "buf lint reported problems"
+  ok "proto clean"
+fi
+
+printf '\n%spre-commit passed%s\n' "$GREEN" "$RESET"

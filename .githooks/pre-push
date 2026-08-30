@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+#
+# pre-push: run the test suite before anything leaves the machine.
+#
+# Bypass: git push --no-verify   or   HOOK_SKIP_TESTS=1 git push
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+PATH="$REPO_ROOT/.tools:$PATH"
+export PATH
+
+if [ "${HOOK_SKIP_TESTS:-0}" = "1" ]; then
+  echo "pre-push: tests skipped (HOOK_SKIP_TESTS=1)"
+  exit 0
+fi
+
+echo "==> go test -race ./..."
+if ! go test -race -count=1 ./...; then
+  cat >&2 <<'EOF'
+
+pre-push rejected: tests are failing.
+Fix them, or push with --no-verify if you know what you are doing.
+EOF
+  exit 1
+fi
+echo "pre-push passed"

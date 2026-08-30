@@ -1,0 +1,73 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - contextcheck
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - goconst
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - wastedassign
+    - whitespace
+
+  settings:
+    govet:
+      enable:
+        - shadow
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    goconst:
+      min-len: 3
+      min-occurrences: 4
+
+  exclusions:
+    generated: lax
+    rules:
+      # Shadowing err inside if-statements is idiomatic and extremely common
+      # in table-driven tests; keep the check for production code only.
+      - path: _test\.go$
+        linters:
+          - errcheck
+          - goconst
+      - path: _test\.go$
+        text: "^shadow: declaration of"
+        linters:
+          - govet
+      - path: internal/gen/
+        linters:
+          - all
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/NE-smirnov/price-tracker-bot
+  exclusions:
+    generated: lax
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

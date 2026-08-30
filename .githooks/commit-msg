@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#
+# commit-msg: enforce Conventional Commits so the history stays readable.
+#
+#   <type>(<optional scope>)<optional !>: <subject>
+#   feat(bot): add /add conversation flow
+#
+# Allowed types: feat fix refactor perf test docs build ci chore revert style
+# Bypass: git commit -n
+set -euo pipefail
+
+MSG_FILE="$1"
+FIRST_LINE="$(head -n1 "$MSG_FILE")"
+
+# Allow merges, reverts and fixup/squash commits through untouched.
+case "$FIRST_LINE" in
+  Merge*|Revert*|fixup!*|squash!*) exit 0 ;;
+esac
+
+PATTERN='^(feat|fix|refactor|perf|test|docs|build|ci|chore|revert|style)(\([a-z0-9._/-]+\))?!?: .{1,90}$'
+
+if ! printf '%s' "$FIRST_LINE" | grep -Eq "$PATTERN"; then
+  cat >&2 <<'EOF'
+commit-msg rejected: subject must follow Conventional Commits.
+
+  <type>(<scope>): <subject>
+
+  types: feat fix refactor perf test docs build ci chore revert style
+  scope: optional, lowercase (bot, core, scraper, currency, notifier, ci, deps, ...)
+
+examples:
+  feat(bot): add /add conversation flow
+  fix(core): close rows in ListTrackedItems
+  chore(deps): bump grpc-go to v1.76.0
+
+EOF
+  printf 'your subject: %s\n' "$FIRST_LINE" >&2
+  exit 1
+fi

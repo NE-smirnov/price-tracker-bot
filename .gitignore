@@ -1,0 +1,23 @@
+# Binaries
+/bin/
+*.exe
+*.test
+*.out
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Local tooling
+/tmp/
+/.tools/
+/coverage.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
