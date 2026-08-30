@@ -84,7 +84,6 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Extend this list as services land: scraper, notifier.
         service: [bot, core, currency, scraper, notifier]
     steps:
       - uses: actions/checkout@v4
