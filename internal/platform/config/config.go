@@ -33,6 +33,45 @@ type Bot struct {
 	RedisDB      int
 }
 
+// Core configures the data-owning service.
+type Core struct {
+	Common
+	GRPCAddr string
+	// PostgresDSN is required: core is the only service that owns the database,
+	// so there is no meaningful default to fall back to.
+	PostgresDSN string
+	RedisAddr   string
+	RedisPass   string
+	RedisDB     int
+	// StatsTTL is how long a computed Stats response stays cacheable. Long
+	// enough to absorb a burst of /stats, short enough that a fresh scrape is
+	// visible quickly.
+	StatsTTL time.Duration
+}
+
+// LoadCore reads the core service configuration.
+func LoadCore() (Core, error) {
+	cfg := Core{
+		Common:      LoadCommon(),
+		GRPCAddr:    str("CORE_GRPC_LISTEN", ":9090"),
+		PostgresDSN: str("POSTGRES_DSN", ""),
+		RedisAddr:   str("REDIS_ADDR", ""),
+		RedisPass:   str("REDIS_PASSWORD", ""),
+	}
+
+	var err error
+	if cfg.RedisDB, err = intVal("REDIS_DB", 0); err != nil {
+		return Core{}, err
+	}
+	if cfg.StatsTTL, err = Duration("CORE_STATS_TTL", 5*time.Minute); err != nil {
+		return Core{}, err
+	}
+	if cfg.PostgresDSN == "" {
+		return Core{}, errors.New("POSTGRES_DSN is required for the core service")
+	}
+	return cfg, nil
+}
+
 // LoadDotEnv loads ./.env if it exists. Missing file is not an error.
 func LoadDotEnv() error {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
