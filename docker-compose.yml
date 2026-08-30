@@ -2,7 +2,7 @@ name: price-tracker
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: price
       POSTGRES_PASSWORD: price
@@ -30,6 +30,28 @@ services:
       timeout: 3s
       retries: 10
 
+  core:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: core
+    env_file: [.env]
+    environment:
+      # Inside the compose network the services are reached by name, which
+      # overrides the localhost values a developer keeps in .env.
+      POSTGRES_DSN: postgres://price:price@postgres:5432/price_tracker?sslmode=disable
+      REDIS_ADDR: redis:6379
+      CORE_GRPC_LISTEN: ":9090"
+    ports:
+      - "9090:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   bot:
     build:
       context: .
@@ -43,6 +65,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      core:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

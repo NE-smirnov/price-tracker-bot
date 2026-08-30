@@ -47,13 +47,36 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+
+    # The repository layer is mostly SQL (leases with SKIP LOCKED, ON CONFLICT
+    # dedup, one-transaction alert decisions), so CI runs a real PostgreSQL
+    # rather than mocking the parts most likely to break.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: price
+          POSTGRES_PASSWORD: price
+          POSTGRES_DB: price_tracker_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U price"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgres://price:price@localhost:5432/price_tracker_test?sslmode=disable
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - run: go test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+      # -p 1 because the database tests share one schema and reset it per test.
+      - run: go test -race -count=1 -p 1 -covermode=atomic -coverprofile=coverage.out ./...
       - run: go tool cover -func=coverage.out | tail -1
 
   build:
@@ -61,8 +84,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Extend this list as services land: core, scraper, notifier.
-        service: [bot]
+        # Extend this list as services land: scraper, notifier.
+        service: [bot, core]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

@@ -8,9 +8,15 @@
 правды, Redis как кэш и очередь задач, пул воркеров для обхода страниц с
 ограничением скорости по хосту.
 
-> **Статус:** в разработке. Готов слой бота (`cmd/bot`) с in-memory хранилищем —
-> его можно запустить и полностью пройти сценарии в Telegram без базы и без
-> остальных сервисов. Следующий шаг — сервис `core`.
+> **Статус:** в разработке. Готовы два слоя:
+>
+> - `cmd/bot` — Telegram-бот с in-memory хранилищем, запускается без базы и без
+>   остальных сервисов;
+> - `cmd/core` — сервис-владелец данных: `ItemService` и `PricingService` по
+>   gRPC, PostgreSQL как источник правды, Redis как кэш статистики.
+>
+> Следующие шаги: перевести бота на `BOT_STORAGE=core`, затем `scraper`,
+> `currency` и `notifier`.
 
 ## Возможности бота
 
@@ -100,11 +106,39 @@ make down
 ## Разработка
 
 ```bash
-make check       # fmt-check + tidy-check + vet + lint + test — то же, что в CI
-make fix         # gofmt, goimports, go mod tidy, golangci-lint --fix
-make test        # go test -race ./...
-make cover       # покрытие в coverage.html
-make build       # бинарники в ./bin
+make check            # fmt-check + vet + lint + test — то же, что в CI
+make fix              # gofmt, goimports, go mod tidy, golangci-lint --fix
+make test             # go test -race ./...  (тесты с БД пропускаются)
+make test-integration # то же + тесты против настоящего PostgreSQL
+make cover            # покрытие
+make build            # бинарники в ./bin
+```
+
+### Тесты, которым нужна база
+
+Логика репозитория — это в основном SQL: аренда задач через
+`FOR UPDATE SKIP LOCKED`, дедупликация алертов через `ON CONFLICT`, решение
+«новый ли это минимум» внутри одной транзакции. Мокать здесь нечего, поэтому
+эти тесты идут против настоящего PostgreSQL и пропускаются, если не задан
+`TEST_DATABASE_URL`:
+
+```bash
+make up                # postgres + redis
+make test-db-create    # отдельная база price_tracker_test
+make test-integration
+```
+
+Схема применяется из `migrations/` перед каждым тестом, так что миграция
+проверяется вместе с кодом. В CI то же самое делает сервис-контейнер
+`postgres:18-alpine`.
+
+### Запуск core локально
+
+```bash
+make up                                    # postgres + redis
+make migrate-up                            # применить схему
+POSTGRES_DSN=... make run-core              # сервис на :9090
+grpcurl -plaintext localhost:9090 list      # gRPC reflection включён
 ```
 
 Git-хуки (включаются через `make hooks`):
@@ -125,7 +159,7 @@ cmd/            точки входа сервисов (bot, core, scraper, noti
 internal/
   domain/       модель предметной области: Money, TrackedItem, Stats, нормализация URL
   bot/          Telegram-слой: FSM, хендлеры, рендер, in-memory Store
-  core/         бизнес-логика core-сервиса
+  core/         core-сервис: репозиторий, движок алертов, gRPC-обработчики
   scraper/      обход страниц и извлечение цены
   currency/     клиент курсов валют с кэшем
   platform/     config, logger, postgres, redis
@@ -146,6 +180,9 @@ deploy/         Dockerfile
 | `BOT_ALLOWED_USERS` | список Telegram ID через запятую; пусто — доступ всем |
 | `CORE_GRPC_ADDR` | адрес core-сервиса |
 | `POSTGRES_DSN`, `REDIS_ADDR` | подключения к хранилищам |
+| `CORE_GRPC_LISTEN` | адрес, на котором слушает core (по умолчанию `:9090`) |
+| `CORE_STATS_TTL` | сколько живёт кэш `/stats` в Redis |
+| `TEST_DATABASE_URL` | база для `make test-integration`; пусто — тесты с БД пропускаются |
 | `CURRENCY_PROVIDER` | провайдер курсов валют |
 
 ## Стек

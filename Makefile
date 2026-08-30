@@ -14,9 +14,13 @@ MIGRATE_VERSION := v4.19.1
 
 export PATH := $(TOOLS_DIR):$(PATH)
 
-# Services with a buildable cmd/ entrypoint. Add core, scraper and notifier here
-# as they land, so `make build` never tries to build an empty package.
-SERVICES := bot
+# Services with a buildable cmd/ entrypoint. Add scraper and notifier here as
+# they land, so `make build` never tries to build an empty package.
+SERVICES := bot core
+
+# DSN used by the integration tests. They are skipped when TEST_DATABASE_URL is
+# empty, so `make test` stays runnable without any infrastructure.
+TEST_DATABASE_URL ?= postgres://price:price@localhost:5432/price_tracker_test?sslmode=disable
 
 ## ---------------------------------------------------------------- help
 
@@ -104,8 +108,18 @@ tidy-check: ## Fail if go.mod/go.sum are not tidy
 ## ---------------------------------------------------------------- test / build
 
 .PHONY: test
-test: ## Run unit tests with race detector
+test: ## Run unit tests with race detector (database tests are skipped)
 	$(GO) test $(GOFLAGS_TEST) ./...
+
+.PHONY: test-integration
+test-integration: ## Run all tests including the ones that need PostgreSQL
+	@echo "using TEST_DATABASE_URL=$(TEST_DATABASE_URL)"
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" $(GO) test $(GOFLAGS_TEST) -p 1 ./...
+
+.PHONY: test-db-create
+test-db-create: ## Create the scratch database the integration tests use
+	docker compose exec -T postgres psql -U price -d postgres \
+		-c "CREATE DATABASE price_tracker_test OWNER price" || true
 
 .PHONY: cover
 cover: ## Run tests with coverage report
