@@ -173,10 +173,15 @@ func NewPricingServer(repo *Repo, cache *redisclient.Cache, log *slog.Logger) *P
 
 // RecordSnapshot stores an observation and returns the alerts to deliver.
 func (s *PricingServer) RecordSnapshot(ctx context.Context, req *pb.RecordSnapshotRequest) (*pb.RecordSnapshotResponse, error) {
-	if req.GetTrackedItemId() == "" || req.GetPrice() == nil {
-		return nil, status.Error(codes.InvalidArgument, "tracked_item_id and price are required")
+	if req.GetTrackedItemId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "tracked_item_id is required")
 	}
-	price := moneyFromProto(req.GetPrice())
+	// A missing price is only meaningful for an unavailable product; for an
+	// in-stock one it means the scraper failed to read the page and should say so
+	// through RecordFailure instead of writing a snapshot with no number in it.
+	if req.GetPrice() == nil && req.GetInStock() {
+		return nil, status.Error(codes.InvalidArgument, "price is required for an in-stock observation")
+	}
 
 	var observedAt time.Time
 	if req.GetObservedAt() != nil {
@@ -185,7 +190,7 @@ func (s *PricingServer) RecordSnapshot(ctx context.Context, req *pb.RecordSnapsh
 
 	result, err := s.repo.RecordSnapshot(ctx, RecordSnapshotInput{
 		TrackedItemID: req.GetTrackedItemId(),
-		Price:         *price,
+		Price:         moneyFromProto(req.GetPrice()),
 		Converted:     moneyFromProto(req.GetConvertedPrice()),
 		InStock:       req.GetInStock(),
 		ObservedAt:    observedAt,

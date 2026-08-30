@@ -24,7 +24,11 @@ const maxFailureBackoff = 6 * time.Hour
 // RecordSnapshotInput is one observation submitted by a scraper.
 type RecordSnapshotInput struct {
 	TrackedItemID string
-	Price         domain.Money
+	// Price may be nil only when InStock is false. The last known price is then
+	// carried forward, so the stock transition is still recorded; without it a
+	// shop that removes the price of an unavailable product could never produce
+	// a "back in stock" alert.
+	Price *domain.Money
 	Converted     *domain.Money
 	InStock       bool
 	ObservedAt    time.Time
@@ -57,11 +61,16 @@ type FailureResult struct {
 // That is what makes "is this an all-time low?" and "did we already send this?"
 // answerable without races between concurrent scraper workers.
 func (r *Repo) RecordSnapshot(ctx context.Context, in RecordSnapshotInput) (SnapshotResult, error) {
-	if !domain.ValidCurrency(in.Price.Currency) {
-		return SnapshotResult{}, fmt.Errorf("%w: bad currency %q", domain.ErrValidation, in.Price.Currency)
+	if in.Price == nil && in.InStock {
+		return SnapshotResult{}, fmt.Errorf("%w: an in-stock observation needs a price", domain.ErrValidation)
 	}
-	if err := mustPositive("price", in.Price.Amount); err != nil {
-		return SnapshotResult{}, err
+	if in.Price != nil {
+		if !domain.ValidCurrency(in.Price.Currency) {
+			return SnapshotResult{}, fmt.Errorf("%w: bad currency %q", domain.ErrValidation, in.Price.Currency)
+		}
+		if err := mustPositive("price", in.Price.Amount); err != nil {
+			return SnapshotResult{}, err
+		}
 	}
 	if in.Converted != nil && !domain.ValidCurrency(in.Converted.Currency) {
 		return SnapshotResult{}, fmt.Errorf("%w: bad converted currency", domain.ErrValidation)
@@ -87,7 +96,19 @@ func (r *Repo) RecordSnapshot(ctx context.Context, in RecordSnapshotInput) (Snap
 		if err != nil {
 			return err
 		}
-		allTimeMin, err := allTimeMinimum(ctx, tx, item.ID, in.Price.Currency)
+		price := in.Price
+		if price == nil {
+			// No price on the page and the product is unavailable. Reuse the last
+			// known one so the row still carries a comparable number; if there is
+			// no history at all there is nothing to record yet.
+			if previous == nil {
+				return fmt.Errorf("%w: no price on the page and no history to carry forward", domain.ErrValidation)
+			}
+			carried := previous.Price
+			price = &carried
+		}
+
+		allTimeMin, err := allTimeMinimum(ctx, tx, item.ID, price.Currency)
 		if err != nil {
 			return err
 		}
@@ -98,7 +119,7 @@ INSERT INTO price_snapshots (id, tracked_item_id, amount, currency,
                              converted_amount, converted_currency, in_stock, observed_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, tracked_item_id, amount, currency, converted_amount, converted_currency, in_stock, observed_at`,
-			uuid.NewString(), item.ID, in.Price.Amount, string(in.Price.Currency),
+			uuid.NewString(), item.ID, price.Amount, string(price.Currency),
 			convAmount, convCurrency, in.InStock, observedAt)
 
 		snapshot, err := scanSnapshot(row)

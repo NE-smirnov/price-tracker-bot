@@ -23,9 +23,13 @@ const (
 )
 
 type RecordSnapshotRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	TrackedItemId  string                 `protobuf:"bytes,1,opt,name=tracked_item_id,json=trackedItemId,proto3" json:"tracked_item_id,omitempty"`
-	Price          *Money                 `protobuf:"bytes,2,opt,name=price,proto3" json:"price,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TrackedItemId string                 `protobuf:"bytes,1,opt,name=tracked_item_id,json=trackedItemId,proto3" json:"tracked_item_id,omitempty"`
+	// Unset only together with in_stock = false: shops commonly remove the price
+	// of an unavailable product, and refusing that observation would lose the
+	// stock transition and with it the "back in stock" alert. The server then
+	// carries the last known price forward.
+	Price          *Money                 `protobuf:"bytes,2,opt,name=price,proto3,oneof" json:"price,omitempty"`
 	ConvertedPrice *Money                 `protobuf:"bytes,3,opt,name=converted_price,json=convertedPrice,proto3,oneof" json:"converted_price,omitempty"`
 	InStock        bool                   `protobuf:"varint,4,opt,name=in_stock,json=inStock,proto3" json:"in_stock,omitempty"`
 	ObservedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
@@ -571,15 +575,16 @@ var File_pricetracker_v1_pricing_proto protoreflect.FileDescriptor
 
 const file_pricetracker_v1_pricing_proto_rawDesc = "" +
 	"\n" +
-	"\x1dpricetracker/v1/pricing.proto\x12\x0fpricetracker.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cpricetracker/v1/common.proto\"\xde\x02\n" +
+	"\x1dpricetracker/v1/pricing.proto\x12\x0fpricetracker.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cpricetracker/v1/common.proto\"\xed\x02\n" +
 	"\x15RecordSnapshotRequest\x12&\n" +
-	"\x0ftracked_item_id\x18\x01 \x01(\tR\rtrackedItemId\x12,\n" +
-	"\x05price\x18\x02 \x01(\v2\x16.pricetracker.v1.MoneyR\x05price\x12D\n" +
-	"\x0fconverted_price\x18\x03 \x01(\v2\x16.pricetracker.v1.MoneyH\x00R\x0econvertedPrice\x88\x01\x01\x12\x19\n" +
+	"\x0ftracked_item_id\x18\x01 \x01(\tR\rtrackedItemId\x121\n" +
+	"\x05price\x18\x02 \x01(\v2\x16.pricetracker.v1.MoneyH\x00R\x05price\x88\x01\x01\x12D\n" +
+	"\x0fconverted_price\x18\x03 \x01(\v2\x16.pricetracker.v1.MoneyH\x01R\x0econvertedPrice\x88\x01\x01\x12\x19\n" +
 	"\bin_stock\x18\x04 \x01(\bR\ainStock\x12;\n" +
 	"\vobserved_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"observedAt\x12*\n" +
-	"\x0eobserved_title\x18\x06 \x01(\tH\x01R\robservedTitle\x88\x01\x01B\x12\n" +
+	"\x0eobserved_title\x18\x06 \x01(\tH\x02R\robservedTitle\x88\x01\x01B\b\n" +
+	"\x06_priceB\x12\n" +
 	"\x10_converted_priceB\x11\n" +
 	"\x0f_observed_title\"\x8b\x01\n" +
 	"\x16RecordSnapshotResponse\x12:\n" +

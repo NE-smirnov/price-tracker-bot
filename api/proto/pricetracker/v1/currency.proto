@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package pricetracker.v1;
+
+import "google/protobuf/timestamp.proto";
+import "pricetracker/v1/common.proto";
+
+option go_package = "github.com/NE-smirnov/price-tracker-bot/internal/gen/pricetracker/v1;pricetrackerv1";
+
+// CurrencyService converts money between currencies.
+//
+// It is a separate service because it is the only component that talks to an
+// external rate provider: its failures, rate limits and cache are isolated from
+// the scrape loop, and the rate a conversion used is reported back so a stored
+// converted price can always be explained.
+service CurrencyService {
+  // Convert expresses an amount in another currency. Converting server-side
+  // keeps the rounding rules and minor-unit handling in one place.
+  rpc Convert(ConvertRequest) returns (ConvertResponse);
+
+  // GetRate exposes the raw rate, for display and for debugging a conversion.
+  rpc GetRate(GetRateRequest) returns (GetRateResponse);
+}
+
+message ConvertRequest {
+  Money amount = 1;
+  string to_currency = 2;
+}
+
+message ConvertResponse {
+  Money converted = 1;
+  ExchangeRate rate = 2;
+}
+
+message GetRateRequest {
+  string from_currency = 1;
+  string to_currency = 2;
+}
+
+message GetRateResponse {
+  ExchangeRate rate = 1;
+}
+
+// ExchangeRate carries the rate as an integer scaled by 1e8. Rates are not money
+// and a float would make two services disagree on the last digit.
+message ExchangeRate {
+  string from_currency = 1;
+  string to_currency = 2;
+  int64 rate_e8 = 3;
+  // When the provider published this rate.
+  google.protobuf.Timestamp as_of = 4;
+  // True when the rate came from the local cache rather than the provider.
+  bool cached = 5;
+}

@@ -26,7 +26,11 @@ service PricingService {
 
 message RecordSnapshotRequest {
   string tracked_item_id = 1;
-  Money price = 2;
+  // Unset only together with in_stock = false: shops commonly remove the price
+  // of an unavailable product, and refusing that observation would lose the
+  // stock transition and with it the "back in stock" alert. The server then
+  // carries the last known price forward.
+  optional Money price = 2;
   optional Money converted_price = 3;
   bool in_stock = 4;
   google.protobuf.Timestamp observed_at = 5;

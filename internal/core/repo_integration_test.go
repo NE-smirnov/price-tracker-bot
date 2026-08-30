@@ -422,7 +422,7 @@ func TestRecordSnapshotStoresHistoryAndReschedules(t *testing.T) {
 	before := time.Now()
 	result, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
 		TrackedItemID: item.ID,
-		Price:         domain.Money{Amount: 12345, Currency: "USD"},
+		Price:         &domain.Money{Amount: 12345, Currency: "USD"},
 		InStock:       true,
 		ObservedTitle: "Widget Pro",
 	})
@@ -470,7 +470,7 @@ func TestRecordSnapshotAlertsAreDeduplicated(t *testing.T) {
 	// First observation crosses the threshold and must alert.
 	first, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
 		TrackedItemID: item.ID,
-		Price:         domain.Money{Amount: 9000, Currency: "USD"},
+		Price:         &domain.Money{Amount: 9000, Currency: "USD"},
 		InStock:       true,
 	})
 	if err != nil {
@@ -484,7 +484,7 @@ func TestRecordSnapshotAlertsAreDeduplicated(t *testing.T) {
 	// it a no-op even though a new snapshot row is written.
 	second, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
 		TrackedItemID: item.ID,
-		Price:         domain.Money{Amount: 9000, Currency: "USD"},
+		Price:         &domain.Money{Amount: 9000, Currency: "USD"},
 		InStock:       true,
 	})
 	if err != nil {
@@ -497,7 +497,7 @@ func TestRecordSnapshotAlertsAreDeduplicated(t *testing.T) {
 	// A further drop is a new all-time low and a new dedup key.
 	third, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
 		TrackedItemID: item.ID,
-		Price:         domain.Money{Amount: 8000, Currency: "USD"},
+		Price:         &domain.Money{Amount: 8000, Currency: "USD"},
 		InStock:       true,
 	})
 	if err != nil {
@@ -513,7 +513,7 @@ func TestRecordSnapshotRejectsUnknownItem(t *testing.T) {
 
 	_, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
 		TrackedItemID: "00000000-0000-0000-0000-000000000000",
-		Price:         domain.Money{Amount: 100, Currency: "USD"},
+		Price:         &domain.Money{Amount: 100, Currency: "USD"},
 		InStock:       true,
 	})
 	if !errors.Is(err, domain.ErrNotFound) {
@@ -563,7 +563,7 @@ func TestRecordFailureBacksOffAndAlertsOnce(t *testing.T) {
 	// A successful scrape must clear the failure state.
 	if _, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
 		TrackedItemID: item.ID,
-		Price:         domain.Money{Amount: 100, Currency: "USD"},
+		Price:         &domain.Money{Amount: 100, Currency: "USD"},
 		InStock:       true,
 	}); err != nil {
 		t.Fatalf("recovery: %v", err)
@@ -587,7 +587,7 @@ func TestHistoryAndStats(t *testing.T) {
 	for i, amount := range prices {
 		if _, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
 			TrackedItemID: item.ID,
-			Price:         domain.Money{Amount: amount, Currency: "USD"},
+			Price:         &domain.Money{Amount: amount, Currency: "USD"},
 			InStock:       true,
 			ObservedAt:    base.Add(time.Duration(i) * time.Minute),
 		}); err != nil {
@@ -659,7 +659,7 @@ func TestDeleteItemRemovesHistory(t *testing.T) {
 
 	if _, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
 		TrackedItemID: item.ID,
-		Price:         domain.Money{Amount: 500, Currency: "USD"},
+		Price:         &domain.Money{Amount: 500, Currency: "USD"},
 		InStock:       true,
 	}); err != nil {
 		t.Fatalf("snapshot: %v", err)
@@ -691,4 +691,79 @@ func itoa(i int) string {
 		i /= 10
 	}
 	return string(digits)
+}
+
+// TestRecordSnapshotCarriesPriceForwardWhenOutOfStock covers the shops that
+// remove the price of an unavailable product. Wildberries does exactly this, and
+// without carrying the previous price forward the stock transition would be lost
+// and the user would never be told the item came back.
+func TestRecordSnapshotCarriesPriceForwardWhenOutOfStock(t *testing.T) {
+	repo, ctx := newTestRepo(t)
+	user := mustUser(t, repo, ctx, 361)
+	item := mustItem(t, repo, ctx, CreateItemInput{
+		UserID: user.ID,
+		URL:    "https://shop.example.com/p/vanishing-price",
+	})
+
+	if _, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
+		TrackedItemID: item.ID,
+		Price:         &domain.Money{Amount: 5000, Currency: "RUB"},
+		InStock:       true,
+	}); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+
+	gone, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
+		TrackedItemID: item.ID,
+		InStock:       false,
+	})
+	if err != nil {
+		t.Fatalf("out of stock: %v", err)
+	}
+	if gone.Snapshot.Price.Amount != 5000 || gone.Snapshot.Price.Currency != "RUB" {
+		t.Fatalf("price = %+v, want the previous 5000 RUB carried forward", gone.Snapshot.Price)
+	}
+	if !equalKinds(kinds(gone.Alerts), domain.AlertOutOfStock) {
+		t.Fatalf("expected out_of_stock, got %v", kinds(gone.Alerts))
+	}
+
+	back, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
+		TrackedItemID: item.ID,
+		Price:         &domain.Money{Amount: 5000, Currency: "RUB"},
+		InStock:       true,
+	})
+	if err != nil {
+		t.Fatalf("back in stock: %v", err)
+	}
+	if !equalKinds(kinds(back.Alerts), domain.AlertBackInStock) {
+		t.Fatalf("expected back_in_stock, got %v", kinds(back.Alerts))
+	}
+}
+
+// TestRecordSnapshotRejectsMissingPriceWhenInStock keeps the relaxation narrow: a
+// price that could not be read from an available product is a scrape failure and
+// must not be stored as a snapshot.
+func TestRecordSnapshotRejectsMissingPriceWhenInStock(t *testing.T) {
+	repo, ctx := newTestRepo(t)
+	user := mustUser(t, repo, ctx, 362)
+	item := mustItem(t, repo, ctx, CreateItemInput{
+		UserID: user.ID,
+		URL:    "https://shop.example.com/p/no-price",
+	})
+
+	if _, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
+		TrackedItemID: item.ID,
+		InStock:       true,
+	}); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("err = %v, want a validation error", err)
+	}
+
+	// Nothing to carry forward either: the very first observation must have a
+	// price, otherwise the row would be meaningless.
+	if _, err := repo.RecordSnapshot(ctx, RecordSnapshotInput{
+		TrackedItemID: item.ID,
+		InStock:       false,
+	}); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("err = %v, want a validation error with no history", err)
+	}
 }
