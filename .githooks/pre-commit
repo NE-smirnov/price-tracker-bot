@@ -25,7 +25,20 @@ cd "$REPO_ROOT"
 
 TOOLS_DIR="$REPO_ROOT/.tools"
 PATH="$TOOLS_DIR:$PATH"
+# Hooks launched from a GUI git client inherit a minimal PATH that usually lacks
+# the Go toolchain, which would fail the hook for a reason unrelated to the code.
+for candidate in /usr/local/go/bin "$HOME/go/bin" /opt/homebrew/bin /usr/local/bin; do
+  case ":$PATH:" in
+    *":$candidate:"*) ;;
+    *) [ -d "$candidate" ] && PATH="$PATH:$candidate" ;;
+  esac
+done
 export PATH
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "hook: go not found in PATH; install Go or add it to PATH" >&2
+  exit 1
+fi
 MODULE="github.com/NE-smirnov/price-tracker-bot"
 
 if [ -t 1 ]; then
