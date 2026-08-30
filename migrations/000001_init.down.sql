@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS exchange_rates;
+DROP TABLE IF EXISTS alerts;
+DROP TABLE IF EXISTS price_snapshots;
+DROP TABLE IF EXISTS tracked_items;
+DROP TABLE IF EXISTS users;

@@ -48,6 +48,12 @@ type TrackedItem struct {
 	UpdatedAt     time.Time
 	LastCheckedAt *time.Time
 	LastSnapshot  *PriceSnapshot // denormalised for fast /list rendering
+
+	// NextCheckAt drives the scraper schedule; FailureStreak counts consecutive
+	// failed scrapes so a broken parser can be reported instead of going quiet.
+	NextCheckAt   time.Time
+	FailureStreak int
+	LastError     string
 }
 
 // PriceSnapshot is one observation of a product page.
@@ -75,12 +81,19 @@ const (
 type Alert struct {
 	ID            string
 	TrackedItemID string
+	UserID        string
 	Kind          AlertKind
-	Message       string
-	Price         *Money
+	Price         Money
 	PreviousPrice *Money
-	CreatedAt     time.Time
-	SentAt        *time.Time
+	TargetPrice   *Money
+
+	// DedupKey identifies "this alert about this item at this value". Delivery is
+	// at-least-once, so the key is what turns a retry into a no-op instead of a
+	// second message to the user.
+	DedupKey string
+
+	CreatedAt time.Time
+	SentAt    *time.Time
 }
 
 // Stats aggregates the price history of one item.
