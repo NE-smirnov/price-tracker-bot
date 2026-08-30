@@ -127,6 +127,13 @@ RETURNING id, tracked_item_id, amount, currency, converted_amount, converted_cur
 			return classify(err, "insert snapshot")
 		}
 
+		// The item row gets its title from this scrape a few statements below, but
+		// the alerts are built from the in-memory copy: without this an alert for a
+		// freshly added item would name no product at all.
+		if item.Title == "" && in.ObservedTitle != "" {
+			item.Title = truncate(in.ObservedTitle, domain.MaxItemTitleLength)
+		}
+
 		decided := DecideAlerts(AlertInput{
 			Item:       item,
 			Previous:   previous,

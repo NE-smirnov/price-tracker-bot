@@ -56,6 +56,10 @@ message PendingAlert {
   Money price = 7;
   optional Money previous_price = 8;
   optional Money target_price = 9;
+  // What the shop charges, when the alert was judged on a converted amount. Both
+  // are shown: the converted price triggered the alert, the shop's price is what
+  // the user pays.
+  optional Money original_price = 11;
   // Stable key for at-least-once delivery: the notifier drops repeats.
   string dedup_key = 10;
 }

@@ -16,7 +16,7 @@ export PATH := $(TOOLS_DIR):$(PATH)
 
 # Services with a buildable cmd/ entrypoint. Add scraper and notifier here as
 # they land, so `make build` never tries to build an empty package.
-SERVICES := bot core
+SERVICES := bot core currency scraper notifier
 
 # DSN used by the integration tests. They are skipped when TEST_DATABASE_URL is
 # empty, so `make test` stays runnable without any infrastructure.
@@ -140,6 +140,18 @@ run-bot: ## Run the telegram bot locally
 .PHONY: run-core
 run-core: ## Run the core gRPC service locally
 	$(GO) run ./cmd/core
+
+.PHONY: run-currency
+run-currency: ## Run the currency gRPC service locally
+	$(GO) run ./cmd/currency
+
+.PHONY: run-scraper
+run-scraper: ## Run the scrape worker pool locally
+	$(GO) run ./cmd/scraper
+
+.PHONY: run-notifier
+run-notifier: ## Run the alert notifier locally
+	$(GO) run ./cmd/notifier
 
 ## ---------------------------------------------------------------- proto
 

@@ -85,7 +85,7 @@ jobs:
     strategy:
       matrix:
         # Extend this list as services land: scraper, notifier.
-        service: [bot, core]
+        service: [bot, core, currency, scraper, notifier]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

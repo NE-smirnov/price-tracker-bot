@@ -24,9 +24,13 @@ type Currency string
 // would silently corrupt alert thresholds and trend statistics.
 type Money struct {
 	// Amount is the value in minor units, e.g. 1999 for 19.99 USD.
-	Amount int64
+	//
+	// The JSON names are given explicitly because this type crosses the queue
+	// between the scraper and the notifier: a field rename in Go must not silently
+	// change the wire format of alerts already sitting in Redis.
+	Amount int64 `json:"amount"`
 	// Currency is the ISO-4217 code, e.g. "USD".
-	Currency Currency
+	Currency Currency `json:"currency"`
 }
 
 // MinorUnits is how many decimal digits a currency prints, per ISO 4217.

@@ -69,6 +69,57 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  currency:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: currency
+    env_file: [.env]
+    environment:
+      REDIS_ADDR: redis:6379
+      CURRENCY_GRPC_LISTEN: ":9091"
+    ports:
+      - "9091:9091"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scraper:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: scraper
+    env_file: [.env]
+    environment:
+      CORE_GRPC_ADDR: core:9090
+      CURRENCY_GRPC_ADDR: currency:9091
+      REDIS_ADDR: redis:6379
+    depends_on:
+      core:
+        condition: service_started
+      currency:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notifier:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: notifier
+    env_file: [.env]
+    environment:
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:

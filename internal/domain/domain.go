@@ -83,9 +83,16 @@ type Alert struct {
 	TrackedItemID string
 	UserID        string
 	Kind          AlertKind
+	// Price is stated in the currency the alert was judged in, so it can be shown
+	// next to the target the user set.
 	Price         Money
 	PreviousPrice *Money
 	TargetPrice   *Money
+	// OriginalPrice is what the shop actually charges, set only when it differs
+	// from Price because a conversion was involved. Both numbers matter: the
+	// converted one is what triggered the alert, the shop's one is what the user
+	// will pay at checkout.
+	OriginalPrice *Money
 
 	// DedupKey identifies "this alert about this item at this value". Delivery is
 	// at-least-once, so the key is what turns a retry into a no-op instead of a

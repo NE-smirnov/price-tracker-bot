@@ -8,17 +8,20 @@
 правды, Redis как кэш и очередь задач, пул воркеров для обхода страниц с
 ограничением скорости по хосту.
 
-> **Статус:** в разработке. Готовы два слоя:
+> **Статус:** цикл замкнут. Пять сервисов:
 >
-> - `cmd/bot` — Telegram-бот с in-memory хранилищем, запускается без базы и без
->   остальных сервисов;
-> - `cmd/core` — сервис-владелец данных: `ItemService` и `PricingService` по
->   gRPC, PostgreSQL как источник правды, Redis как кэш статистики.
+> - `cmd/bot` — Telegram-бот. `BOT_STORAGE=memory` запускает его без базы и без
+>   остальных сервисов, `BOT_STORAGE=core` — против core по gRPC; интерфейс
+>   `bot.Store` при этом не меняется;
+> - `cmd/core` — владелец данных: `ItemService` и `PricingService`, PostgreSQL как
+>   источник правды, Redis как кэш статистики, движок алертов;
+> - `cmd/currency` — конвертация сумм по кэшированным курсам;
+> - `cmd/scraper` — пул воркеров: берёт у core партию просроченных товаров,
+>   вытаскивает цену, конвертирует и записывает снимок;
+> - `cmd/notifier` — доставка алертов в Telegram с дедупликацией и повторами.
 >
-> Бот умеет работать против core: `BOT_STORAGE=core` переключает его с
-> in-memory хранилища на gRPC-клиент, интерфейс `bot.Store` при этом не меняется.
->
-> Следующие шаги: `scraper`, `currency` и `notifier`.
+> Товар, добавленный в боте, доходит до уведомления без ручных шагов. Проверено на
+> живых страницах Wildberries.
 
 ## Возможности бота
 
@@ -36,24 +39,35 @@
 ## Архитектура
 
 ```
-                    ┌──────────────┐
-   Telegram ◀──────▶│     bot      │  FSM диалогов, рендер сообщений
-                    └──────┬───────┘
-                           │ gRPC
-                    ┌──────▼───────┐
-                    │     core     │  источник правды: товары, история, статистика
-                    └──┬────────┬──┘
-              PostgreSQL        Redis (кэш + очереди)
-                                 ▲          ▲
-                       queue:scrape    queue:notify
-                                 │          │
-                    ┌────────────┴──┐   ┌───┴──────────┐
-                    │    scraper    │   │   notifier   │
-                    │ пул воркеров, │   │  доставка    │
-                    │ rate limit,   │   │  алертов,    │
-                    │ курсы валют   │   │  retry       │
-                    └───────────────┘   └──────────────┘
+  Telegram ◀──────▶ bot ────────────gRPC────────────┐
+                                                    │
+                    scraper ───gRPC──▶ currency     │
+                       │                  │         │
+                       │              Redis (курсы) │
+                       └────────────gRPC────────────┤
+                                                    ▼
+                                                  core ──────▶ PostgreSQL
+                                                    │
+                                                    ▼
+                                    Redis: кэш статистики,
+                                     queue:alerts, дедуп
+                                                    │ BLPOP
+                                                    ▼
+  Telegram ◀────────────────────────────────────  notifier
 ```
+
+Один цикл выглядит так:
+
+1. `scraper` просит у core партию товаров, у которых истёк `next_check_at`. Аренда
+   выдаётся в одной транзакции через `FOR UPDATE SKIP LOCKED`, поэтому несколько
+   воркеров и несколько инстансов сервиса не возьмут один товар дважды.
+2. Для каждого товара воркер открывает страницу (или API магазина), достаёт цену и
+   наличие.
+3. Если у товара задана цена в другой валюте, `scraper` дергает `currency` и
+   прикладывает к снимку сконвертированную сумму.
+4. `core` пишет снимок, сам решает, какие алерты нужны, и складывает их в
+   `queue:alerts` в Redis.
+5. `notifier` забирает алерт, отправляет сообщение и помечает ключ дедупликации.
 
 Почему так:
 
@@ -61,9 +75,16 @@
   запустить на in-memory реализации того же интерфейса `bot.Store` и отлаживать UX
   отдельно от инфраструктуры.
 - **core** единственный владеет схемой БД. Остальные сервисы ходят к данным только
-  через него.
-- **scraper** и **notifier** общаются через очереди в Redis, а не напрямую: обход
-  страниц и доставка сообщений — независимо масштабируемые и отказоустойчивые части.
+  через него. Решение «нужен ли алерт» тоже принимает он: оно требует предыдущего
+  снимка, исторического минимума и порога пользователя в одной транзакции.
+- **scraper** не подписан на очередь задач, а сам просит партию у core. Очередь
+  пришлось бы наполнять отдельным планировщиком, а состояние «когда проверять
+  дальше» всё равно лежит в базе — так у расписания остаётся один владелец.
+- **notifier** отделён от `scraper` очередью: заблокированный магазин не должен
+  задерживать доставку уже готовых сообщений, а лимиты Telegram — обход страниц.
+- **currency** вынесен в отдельный сервис, потому что курс — это общий кэш. Один
+  инстанс держит его в Redis и в памяти, и десяток воркеров не выжигает лимит
+  внешнего API.
 
 ### Ключевые решения
 
@@ -79,6 +100,18 @@
   Telegram в 64 байта; при переполнении кнопка деградирует в no-op, а не ломает
   сообщение.
 - **Пользовательский текст всегда экранируется** перед отправкой в HTML parse mode.
+- **Курс валют — целое число `rate_e8`** (курс × 10⁸), умножение через `math/big`,
+  округление half-up. Итог не зависит от порядка операций, а разная точность валют
+  (`JPY` без копеек, `KWD` с тремя знаками) учитывается таблицей в `domain`.
+- **Алерт называет цену в той валюте, в которой сработал порог**, и рядом — цену
+  магазина. «36829 RUB при желаемой 90000 TRY» — два несравнимых числа, поэтому
+  сообщение показывает оба явно.
+- **Доставка at-least-once, дедупликация по ключу.** Алерт помечается в Redis до
+  отправки, а не после: повтор промолчит, но потерянное сообщение заметит
+  пользователь, и лучше повторить, чем потерять.
+- **Заблокированный магазин — это не «нет цены».** 403 от Amazon и 404 на снятом
+  товаре ведут к разным действиям, поэтому ошибки классифицированы, а сообщение об
+  «отвалившемся» товаре уходит только когда серия неудач впервые доходит до порога.
 
 ## Быстрый старт
 
@@ -97,10 +130,10 @@ $EDITOR .env               # вписать TELEGRAM_BOT_TOKEN
 make run-bot               # BOT_STORAGE=memory — база не нужна
 ```
 
-Полный стек (когда появятся остальные сервисы):
+Полный стек:
 
 ```bash
-make up-all                # postgres, redis и все сервисы в docker compose
+make up-all                # postgres, redis и все пять сервисов в docker compose
 make logs
 make down
 ```
@@ -134,14 +167,26 @@ make test-integration
 проверяется вместе с кодом. В CI то же самое делает сервис-контейнер
 `postgres:18-alpine`.
 
-### Запуск core локально
+### Запуск сервисов локально
 
 ```bash
-make up                                    # postgres + redis
-make migrate-up                            # применить схему
-POSTGRES_DSN=... make run-core              # сервис на :9090
-grpcurl -plaintext localhost:9090 list      # gRPC reflection включён
+make up                                # postgres + redis
+make migrate-up                        # применить схему
+
+make run-core                          # :9090, gRPC reflection включён
+make run-currency                      # :9091
+make run-scraper                       # пул воркеров, ходит в core и currency
+make run-notifier                      # нужен TELEGRAM_BOT_TOKEN
+make run-bot                           # BOT_STORAGE=core
+
+grpcurl -plaintext localhost:9090 list
+grpcurl -plaintext -d '{"amount":{"amount":249900,"currency":"RUB"},"to_currency":"TRY"}' \
+  localhost:9091 pricetracker.v1.CurrencyService/Convert
 ```
+
+Проверить цикл целиком, не поднимая бота: добавить товар через `grpcurl` в
+`ItemService/CreateTrackedItem`, запустить `scraper` и посмотреть очередь —
+`redis-cli lindex queue:alerts 0`.
 
 Git-хуки (включаются через `make hooks`):
 
@@ -157,14 +202,15 @@ Git-хуки (включаются через `make hooks`):
 ## Структура
 
 ```
-cmd/            точки входа сервисов (bot, core, scraper, notifier)
+cmd/            точки входа сервисов (bot, core, currency, scraper, notifier)
 internal/
   domain/       модель предметной области: Money, TrackedItem, Stats, нормализация URL
   bot/          Telegram-слой: FSM, хендлеры, рендер, in-memory Store
   core/         core-сервис: репозиторий, движок алертов, gRPC-обработчики
-  scraper/      обход страниц и извлечение цены
-  currency/     клиент курсов валют с кэшем
-  platform/     config, logger, postgres, redis
+  scraper/      пул воркеров, HTTP-клиент с rate limit, адаптеры магазинов
+  currency/     сервис курсов: провайдер, кэш, конвертация
+  notify/       рендер сообщений и воркер доставки алертов
+  platform/     config, logger, postgres, redis, queue, grpcserve, grpcdial
 api/proto/      gRPC-контракты
 migrations/     миграции схемы PostgreSQL
 deploy/         Dockerfile
@@ -185,7 +231,12 @@ deploy/         Dockerfile
 | `CORE_GRPC_LISTEN` | адрес, на котором слушает core (по умолчанию `:9090`) |
 | `CORE_STATS_TTL` | сколько живёт кэш `/stats` в Redis |
 | `TEST_DATABASE_URL` | база для `make test-integration`; пусто — тесты с БД пропускаются |
-| `CURRENCY_PROVIDER` | провайдер курсов валют |
+| `CURRENCY_GRPC_LISTEN`, `CURRENCY_GRPC_ADDR` | где слушает и куда ходить за конвертацией |
+| `CURRENCY_PROVIDER_URL`, `CURRENCY_RATE_TTL` | источник курсов и время жизни кэша |
+| `SCRAPER_WORKERS`, `SCRAPER_BATCH_SIZE` | размер пула и партии товаров за один запрос к core |
+| `SCRAPER_PER_HOST_GAP`, `SCRAPER_MAX_RETRIES` | пауза между запросами к одному хосту и число повторов |
+| `SCRAPER_LEASE`, `SCRAPER_IDLE_PAUSE` | срок аренды товара и пауза, когда работы нет |
+| `NOTIFIER_WORKERS`, `NOTIFIER_MAX_ATTEMPTS` | параллелизм доставки и предел повторов |
 
 ## Стек
 
@@ -193,4 +244,4 @@ Go · gRPC (+ streaming) · PostgreSQL · Redis · Docker Compose ·
 [go-telegram/bot](https://github.com/go-telegram/bot) ·
 [golangci-lint](https://golangci-lint.run/) · [buf](https://buf.build/) ·
 [golang-migrate](https://github.com/golang-migrate/migrate) ·
-[Frankfurter](https://frankfurter.dev/) для курсов валют
+[open.er-api.com](https://open.er-api.com/) для курсов валют

@@ -131,18 +131,3 @@ CREATE TABLE alerts (
 );
 
 CREATE INDEX alerts_item_created_idx ON alerts (tracked_item_id, created_at DESC);
-
--- Cached exchange rates. A shared table means a restart does not lose the rates
--- and every service sees the same numbers even if Redis is cold.
-CREATE TABLE exchange_rates (
-    base_currency   CHAR(3)     NOT NULL
-        CONSTRAINT exchange_rates_base_iso CHECK (base_currency ~ '^[A-Z]{3}$'),
-    quote_currency  CHAR(3)     NOT NULL
-        CONSTRAINT exchange_rates_quote_iso CHECK (quote_currency ~ '^[A-Z]{3}$'),
-    -- Rate scaled by 10^8 and stored as an integer, for the same reason prices
-    -- are: no binary floating point anywhere near money.
-    rate_e8         BIGINT      NOT NULL CONSTRAINT exchange_rates_rate_positive CHECK (rate_e8 > 0),
-    fetched_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    PRIMARY KEY (base_currency, quote_currency)
-);

@@ -67,8 +67,12 @@ func DecideAlerts(in AlertInput) []domain.Alert {
 					Kind:          domain.AlertPriceDrop,
 					TrackedItemID: in.Item.ID,
 					UserID:        in.Item.UserID,
-					Price:         in.New.Price,
-					PreviousPrice: previousPrice(in.Previous),
+					// Stated in the currency the comparison was made in, not the
+					// shop's: a message reading "36829 RUB, желаемая 90000 TRY" gives
+					// the user two numbers they cannot compare.
+					Price:         current,
+					PreviousPrice: previousPriceIn(in.Previous, target.Currency),
+					OriginalPrice: originalPrice(in.New.Price, current),
 					TargetPrice:   &target,
 					// Keyed by price, so a drop to the same value after a
 					// bounce back up is reported again, but a duplicate
@@ -124,6 +128,31 @@ func priceIn(s domain.PriceSnapshot, want domain.Currency) (domain.Money, bool) 
 		return *s.Converted, true
 	}
 	return domain.Money{}, false
+}
+
+// originalPrice returns the shop's own price when it differs from the amount the
+// alert is stated in, and nil when they are the same number in the same
+// currency — repeating it would only add noise to the message.
+func originalPrice(shop, stated domain.Money) *domain.Money {
+	if shop.Currency == stated.Currency {
+		return nil
+	}
+	price := shop
+	return &price
+}
+
+// previousPriceIn states the earlier price in the same currency as the current
+// one, so the two can be shown side by side. It returns nil rather than an
+// amount in another currency, because a percentage across currencies is
+// meaningless and a bare unconverted number is worse than none.
+func previousPriceIn(s *domain.PriceSnapshot, want domain.Currency) *domain.Money {
+	if s == nil {
+		return nil
+	}
+	if price, ok := priceIn(*s, want); ok {
+		return &price
+	}
+	return nil
 }
 
 func previousPrice(s *domain.PriceSnapshot) *domain.Money {

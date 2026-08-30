@@ -137,6 +137,7 @@ func pendingAlerts(item domain.TrackedItem, telegramID int64, alerts []domain.Al
 			Price:         moneyToProto(a.Price),
 			PreviousPrice: moneyPtrToProto(a.PreviousPrice),
 			TargetPrice:   moneyPtrToProto(a.TargetPrice),
+			OriginalPrice: moneyPtrToProto(a.OriginalPrice),
 			DedupKey:      a.DedupKey,
 		})
 	}

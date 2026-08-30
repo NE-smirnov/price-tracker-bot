@@ -177,6 +177,10 @@ type PendingAlert struct {
 	Price         *Money                 `protobuf:"bytes,7,opt,name=price,proto3" json:"price,omitempty"`
 	PreviousPrice *Money                 `protobuf:"bytes,8,opt,name=previous_price,json=previousPrice,proto3,oneof" json:"previous_price,omitempty"`
 	TargetPrice   *Money                 `protobuf:"bytes,9,opt,name=target_price,json=targetPrice,proto3,oneof" json:"target_price,omitempty"`
+	// What the shop charges, when the alert was judged on a converted amount. Both
+	// are shown: the converted price triggered the alert, the shop's price is what
+	// the user pays.
+	OriginalPrice *Money `protobuf:"bytes,11,opt,name=original_price,json=originalPrice,proto3,oneof" json:"original_price,omitempty"`
 	// Stable key for at-least-once delivery: the notifier drops repeats.
 	DedupKey      string `protobuf:"bytes,10,opt,name=dedup_key,json=dedupKey,proto3" json:"dedup_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -272,6 +276,13 @@ func (x *PendingAlert) GetPreviousPrice() *Money {
 func (x *PendingAlert) GetTargetPrice() *Money {
 	if x != nil {
 		return x.TargetPrice
+	}
+	return nil
+}
+
+func (x *PendingAlert) GetOriginalPrice() *Money {
+	if x != nil {
+		return x.OriginalPrice
 	}
 	return nil
 }
@@ -589,7 +600,7 @@ const file_pricetracker_v1_pricing_proto_rawDesc = "" +
 	"\x0f_observed_title\"\x8b\x01\n" +
 	"\x16RecordSnapshotResponse\x12:\n" +
 	"\bsnapshot\x18\x01 \x01(\v2\x1e.pricetracker.v1.PriceSnapshotR\bsnapshot\x125\n" +
-	"\x06alerts\x18\x02 \x03(\v2\x1d.pricetracker.v1.PendingAlertR\x06alerts\"\xcd\x03\n" +
+	"\x06alerts\x18\x02 \x03(\v2\x1d.pricetracker.v1.PendingAlertR\x06alerts\"\xa4\x04\n" +
 	"\fPendingAlert\x12.\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1a.pricetracker.v1.AlertKindR\x04kind\x12&\n" +
 	"\x0ftracked_item_id\x18\x02 \x01(\tR\rtrackedItemId\x12\x17\n" +
@@ -601,11 +612,13 @@ const file_pricetracker_v1_pricing_proto_rawDesc = "" +
 	"\bitem_url\x18\x06 \x01(\tR\aitemUrl\x12,\n" +
 	"\x05price\x18\a \x01(\v2\x16.pricetracker.v1.MoneyR\x05price\x12B\n" +
 	"\x0eprevious_price\x18\b \x01(\v2\x16.pricetracker.v1.MoneyH\x00R\rpreviousPrice\x88\x01\x01\x12>\n" +
-	"\ftarget_price\x18\t \x01(\v2\x16.pricetracker.v1.MoneyH\x01R\vtargetPrice\x88\x01\x01\x12\x1b\n" +
+	"\ftarget_price\x18\t \x01(\v2\x16.pricetracker.v1.MoneyH\x01R\vtargetPrice\x88\x01\x01\x12B\n" +
+	"\x0eoriginal_price\x18\v \x01(\v2\x16.pricetracker.v1.MoneyH\x02R\roriginalPrice\x88\x01\x01\x12\x1b\n" +
 	"\tdedup_key\x18\n" +
 	" \x01(\tR\bdedupKeyB\x11\n" +
 	"\x0f_previous_priceB\x0f\n" +
-	"\r_target_price\"\x93\x01\n" +
+	"\r_target_priceB\x11\n" +
+	"\x0f_original_price\"\x93\x01\n" +
 	"\x14RecordFailureRequest\x12&\n" +
 	"\x0ftracked_item_id\x18\x01 \x01(\tR\rtrackedItemId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12;\n" +
@@ -671,23 +684,24 @@ var file_pricetracker_v1_pricing_proto_depIdxs = []int32{
 	8,  // 6: pricetracker.v1.PendingAlert.price:type_name -> pricetracker.v1.Money
 	8,  // 7: pricetracker.v1.PendingAlert.previous_price:type_name -> pricetracker.v1.Money
 	8,  // 8: pricetracker.v1.PendingAlert.target_price:type_name -> pricetracker.v1.Money
-	9,  // 9: pricetracker.v1.RecordFailureRequest.observed_at:type_name -> google.protobuf.Timestamp
-	2,  // 10: pricetracker.v1.RecordFailureResponse.alerts:type_name -> pricetracker.v1.PendingAlert
-	9,  // 11: pricetracker.v1.GetPriceHistoryRequest.since:type_name -> google.protobuf.Timestamp
-	12, // 12: pricetracker.v1.GetStatsResponse.stats:type_name -> pricetracker.v1.Stats
-	0,  // 13: pricetracker.v1.PricingService.RecordSnapshot:input_type -> pricetracker.v1.RecordSnapshotRequest
-	3,  // 14: pricetracker.v1.PricingService.RecordFailure:input_type -> pricetracker.v1.RecordFailureRequest
-	5,  // 15: pricetracker.v1.PricingService.GetPriceHistory:input_type -> pricetracker.v1.GetPriceHistoryRequest
-	6,  // 16: pricetracker.v1.PricingService.GetStats:input_type -> pricetracker.v1.GetStatsRequest
-	1,  // 17: pricetracker.v1.PricingService.RecordSnapshot:output_type -> pricetracker.v1.RecordSnapshotResponse
-	4,  // 18: pricetracker.v1.PricingService.RecordFailure:output_type -> pricetracker.v1.RecordFailureResponse
-	10, // 19: pricetracker.v1.PricingService.GetPriceHistory:output_type -> pricetracker.v1.PriceSnapshot
-	7,  // 20: pricetracker.v1.PricingService.GetStats:output_type -> pricetracker.v1.GetStatsResponse
-	17, // [17:21] is the sub-list for method output_type
-	13, // [13:17] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	8,  // 9: pricetracker.v1.PendingAlert.original_price:type_name -> pricetracker.v1.Money
+	9,  // 10: pricetracker.v1.RecordFailureRequest.observed_at:type_name -> google.protobuf.Timestamp
+	2,  // 11: pricetracker.v1.RecordFailureResponse.alerts:type_name -> pricetracker.v1.PendingAlert
+	9,  // 12: pricetracker.v1.GetPriceHistoryRequest.since:type_name -> google.protobuf.Timestamp
+	12, // 13: pricetracker.v1.GetStatsResponse.stats:type_name -> pricetracker.v1.Stats
+	0,  // 14: pricetracker.v1.PricingService.RecordSnapshot:input_type -> pricetracker.v1.RecordSnapshotRequest
+	3,  // 15: pricetracker.v1.PricingService.RecordFailure:input_type -> pricetracker.v1.RecordFailureRequest
+	5,  // 16: pricetracker.v1.PricingService.GetPriceHistory:input_type -> pricetracker.v1.GetPriceHistoryRequest
+	6,  // 17: pricetracker.v1.PricingService.GetStats:input_type -> pricetracker.v1.GetStatsRequest
+	1,  // 18: pricetracker.v1.PricingService.RecordSnapshot:output_type -> pricetracker.v1.RecordSnapshotResponse
+	4,  // 19: pricetracker.v1.PricingService.RecordFailure:output_type -> pricetracker.v1.RecordFailureResponse
+	10, // 20: pricetracker.v1.PricingService.GetPriceHistory:output_type -> pricetracker.v1.PriceSnapshot
+	7,  // 21: pricetracker.v1.PricingService.GetStats:output_type -> pricetracker.v1.GetStatsResponse
+	18, // [18:22] is the sub-list for method output_type
+	14, // [14:18] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_pricetracker_v1_pricing_proto_init() }

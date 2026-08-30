@@ -124,9 +124,15 @@ func TestDecideAlertsUsesConvertedPrice(t *testing.T) {
 	if !equalKinds(kinds(got), domain.AlertPriceDrop) {
 		t.Fatalf("kinds = %v, want price_drop", kinds(got))
 	}
-	// The message must quote the shop's own price, not the converted one.
-	if got[0].Price != tryl(30000) {
-		t.Fatalf("alert price = %v, want the shop price", got[0].Price)
+	// The alert is stated in the currency it was judged in, so the user sees two
+	// comparable numbers rather than "30000 TRY, желаемая 10.00 USD".
+	if got[0].Price != converted {
+		t.Fatalf("alert price = %v, want the converted price", got[0].Price)
+	}
+	// The shop's own price is carried alongside, because that is what is paid at
+	// checkout.
+	if got[0].OriginalPrice == nil || *got[0].OriginalPrice != tryl(30000) {
+		t.Fatalf("alert original price = %v, want the shop price", got[0].OriginalPrice)
 	}
 	if got[0].TargetPrice == nil || *got[0].TargetPrice != target {
 		t.Fatalf("alert must carry the threshold it was compared against")

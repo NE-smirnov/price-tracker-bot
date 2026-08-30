@@ -27,6 +27,10 @@ var ErrBlocked = errors.New("blocked by the shop's anti-bot protection")
 // about what a stored amount means.
 func MinorUnits(c domain.Currency) int { return domain.MinorUnits(c) }
 
+// currencyRUB is spelled out once: it is the currency of the one shop with a
+// dedicated adapter, so it appears in several places that must agree.
+const currencyRUB domain.Currency = "RUB"
+
 // currencyBySymbol maps the symbols and words shops actually print next to a
 // price onto ISO codes. Longer keys are matched first so "TL" does not shadow
 // nothing and "руб" is not cut down to something else.
@@ -34,7 +38,7 @@ var currencyBySymbol = []struct {
 	token    string
 	currency domain.Currency
 }{
-	{"руб", "RUB"}, {"₽", "RUB"}, {"rub", "RUB"},
+	{"руб", currencyRUB}, {"₽", currencyRUB}, {"rub", currencyRUB},
 	{"₺", "TRY"}, {"try", "TRY"}, {"tl", "TRY"},
 	{"€", "EUR"}, {"eur", "EUR"},
 	{"£", "GBP"}, {"gbp", "GBP"},
@@ -156,7 +160,7 @@ func splitDecimal(cleaned string, exp int) (intPart, fracPart string, err error)
 	lastComma := strings.LastIndex(cleaned, ",")
 	lastDot := strings.LastIndex(cleaned, ".")
 
-	sep := -1
+	var sep int
 	switch {
 	case lastComma == -1 && lastDot == -1:
 		return cleaned, "", nil

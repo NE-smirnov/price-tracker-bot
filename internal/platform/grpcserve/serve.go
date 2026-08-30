@@ -79,8 +79,9 @@ func Run(ctx context.Context, opts Options) error {
 	serveErr := make(chan error, 1)
 	go func() {
 		opts.Log.Info(opts.Name+" listening", "addr", listener.Addr().String())
-		if err := server.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			serveErr <- fmt.Errorf("serve: %w", err)
+		if serveFailure := server.Serve(listener); serveFailure != nil &&
+			!errors.Is(serveFailure, grpc.ErrServerStopped) {
+			serveErr <- fmt.Errorf("serve: %w", serveFailure)
 			return
 		}
 		serveErr <- nil

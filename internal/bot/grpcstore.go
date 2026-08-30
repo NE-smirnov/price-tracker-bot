@@ -9,14 +9,13 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/NE-smirnov/price-tracker-bot/internal/gen/pricetracker/v1"
 
 	"github.com/NE-smirnov/price-tracker-bot/internal/domain"
+	"github.com/NE-smirnov/price-tracker-bot/internal/platform/grpcdial"
 )
 
 // CoreStore is a Store backed by the core service over gRPC.
@@ -56,19 +55,9 @@ func NewCoreStore(opts CoreStoreOptions) (*CoreStore, error) {
 		opts.CallTimeout = defaultCallTimeout
 	}
 
-	conn, err := grpc.NewClient(opts.Addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		// Both services sit inside one compose network / VPC, so a plaintext
-		// connection is intentional; TLS belongs at the deployment edge.
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                30 * time.Second,
-			Timeout:             10 * time.Second,
-			PermitWithoutStream: true,
-		}),
-		grpc.WithDefaultCallOptions(grpc.WaitForReady(false)),
-	)
+	conn, err := grpcdial.Dial(opts.Addr, opts.CallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("dial core at %s: %w", opts.Addr, err)
+		return nil, err
 	}
 
 	return &CoreStore{
