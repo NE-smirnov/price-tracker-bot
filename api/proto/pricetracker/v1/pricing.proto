@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package pricetracker.v1;
+
+import "google/protobuf/timestamp.proto";
+import "pricetracker/v1/common.proto";
+
+option go_package = "github.com/NE-smirnov/price-tracker-bot/internal/gen/pricetracker/v1;pricetrackerv1";
+
+// PricingService owns price history and everything derived from it.
+service PricingService {
+  // RecordSnapshot stores one observation and returns the alerts it triggered.
+  // Deciding on alerts here, next to the history, keeps the scraper stateless
+  // and makes "is this an all-time low?" a single transaction.
+  rpc RecordSnapshot(RecordSnapshotRequest) returns (RecordSnapshotResponse);
+
+  // RecordFailure marks a scrape attempt that produced no price.
+  rpc RecordFailure(RecordFailureRequest) returns (RecordFailureResponse);
+
+  // GetPriceHistory streams snapshots oldest-first. Streaming keeps memory flat
+  // for long windows and lets the caller render progressively.
+  rpc GetPriceHistory(GetPriceHistoryRequest) returns (stream PriceSnapshot);
+
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+}
+
+message RecordSnapshotRequest {
+  string tracked_item_id = 1;
+  Money price = 2;
+  optional Money converted_price = 3;
+  bool in_stock = 4;
+  google.protobuf.Timestamp observed_at = 5;
+  // Title as seen on the page; used to fill in an item added without one.
+  optional string observed_title = 6;
+}
+
+message RecordSnapshotResponse {
+  PriceSnapshot snapshot = 1;
+  // Alerts the caller should enqueue for delivery. Empty in the common case.
+  repeated PendingAlert alerts = 2;
+}
+
+// PendingAlert is a ready-to-deliver notification. It carries the numbers it
+// was computed from, so the notifier never has to query anything back.
+message PendingAlert {
+  AlertKind kind = 1;
+  string tracked_item_id = 2;
+  string user_id = 3;
+  int64 telegram_id = 4;
+  string item_title = 5;
+  string item_url = 6;
+  Money price = 7;
+  optional Money previous_price = 8;
+  optional Money target_price = 9;
+  // Stable key for at-least-once delivery: the notifier drops repeats.
+  string dedup_key = 10;
+}
+
+message RecordFailureRequest {
+  string tracked_item_id = 1;
+  string reason = 2;
+  google.protobuf.Timestamp observed_at = 3;
+}
+
+message RecordFailureResponse {
+  int32 failure_streak = 1;
+  // Set when the streak crossed the threshold and the user should be told.
+  repeated PendingAlert alerts = 2;
+}
+
+message GetPriceHistoryRequest {
+  string user_id = 1;
+  string item_id = 2;
+  // Inclusive lower bound. Unset means "since the item was created".
+  optional google.protobuf.Timestamp since = 3;
+  // Upper bound on returned snapshots; the server caps this.
+  int32 limit = 4;
+}
+
+message GetStatsRequest {
+  string user_id = 1;
+  string item_id = 2;
+  // Length of the window ending now.
+  int32 window_seconds = 3;
+}
+
+message GetStatsResponse {
+  Stats stats = 1;
+}

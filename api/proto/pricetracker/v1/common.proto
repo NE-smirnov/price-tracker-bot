@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package pricetracker.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/NE-smirnov/price-tracker-bot/internal/gen/pricetracker/v1;pricetrackerv1";
+
+// Money is an exact monetary amount. Amounts travel as minor units (cents,
+// kuruş) in an int64 so that no float rounding can ever change a price.
+message Money {
+  // Amount in minor units, e.g. 1999 for 19.99 USD.
+  int64 amount = 1;
+  // ISO-4217 alphabetic code, upper case.
+  string currency = 2;
+}
+
+// User of the bot, identified by a Telegram account.
+message User {
+  string id = 1;
+  int64 telegram_id = 2;
+  string username = 3;
+  string language_code = 4;
+  string default_currency = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+// TrackedItem is one product a user watches.
+message TrackedItem {
+  string id = 1;
+  string user_id = 2;
+  string url = 3;
+  string title = 4;
+  // Alert threshold. Unset means "notify on any new all-time low".
+  optional Money target_price = 5;
+  // How often the scraper should refresh this item, in seconds.
+  int32 check_interval_seconds = 6;
+  bool active = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp next_check_at = 9;
+  // Most recent observation, if the item has ever been scraped.
+  optional PriceSnapshot last_snapshot = 10;
+  // Consecutive scrape failures. Used to alert on a broken parser.
+  int32 failure_streak = 11;
+}
+
+// PriceSnapshot is one observation of a product's price and availability.
+message PriceSnapshot {
+  string id = 1;
+  string tracked_item_id = 2;
+  // Price exactly as shown by the shop.
+  Money price = 3;
+  // Same amount converted to the user's currency, when a rate was available.
+  optional Money converted_price = 4;
+  bool in_stock = 5;
+  google.protobuf.Timestamp observed_at = 6;
+}
+
+// Trend of the price over the requested window.
+enum Trend {
+  TREND_UNSPECIFIED = 0;
+  TREND_UP = 1;
+  TREND_DOWN = 2;
+  TREND_FLAT = 3;
+}
+
+// Stats aggregates a price history window.
+message Stats {
+  string tracked_item_id = 1;
+  Money current = 2;
+  Money min = 3;
+  Money max = 4;
+  Money avg = 5;
+  Trend trend = 6;
+  // Change between the first and the last sample of the window, in percent.
+  double change_percent = 7;
+  int32 samples = 8;
+  bool in_stock = 9;
+  google.protobuf.Timestamp first_observed_at = 10;
+  google.protobuf.Timestamp last_observed_at = 11;
+}
+
+// Kind of alert produced for a tracked item.
+enum AlertKind {
+  ALERT_KIND_UNSPECIFIED = 0;
+  ALERT_KIND_PRICE_DROP = 1;
+  ALERT_KIND_BACK_IN_STOCK = 2;
+  ALERT_KIND_OUT_OF_STOCK = 3;
+  ALERT_KIND_ALL_TIME_LOW = 4;
+  ALERT_KIND_SCRAPE_DEGRADED = 5;
+}

@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package pricetracker.v1;
+
+import "pricetracker/v1/common.proto";
+
+option go_package = "github.com/NE-smirnov/price-tracker-bot/internal/gen/pricetracker/v1;pricetrackerv1";
+
+// ItemService owns users and the items they track. It is the only writer of
+// those tables; every other service reaches them through this API.
+service ItemService {
+  // EnsureUser creates the user on first contact and returns the existing one
+  // afterwards. Idempotent, so /start can be pressed any number of times.
+  rpc EnsureUser(EnsureUserRequest) returns (EnsureUserResponse);
+
+  rpc UpdateUserSettings(UpdateUserSettingsRequest) returns (UpdateUserSettingsResponse);
+
+  rpc CreateTrackedItem(CreateTrackedItemRequest) returns (CreateTrackedItemResponse);
+  rpc GetTrackedItem(GetTrackedItemRequest) returns (GetTrackedItemResponse);
+  rpc ListTrackedItems(ListTrackedItemsRequest) returns (ListTrackedItemsResponse);
+  rpc UpdateTrackedItem(UpdateTrackedItemRequest) returns (UpdateTrackedItemResponse);
+  rpc DeleteTrackedItem(DeleteTrackedItemRequest) returns (DeleteTrackedItemResponse);
+
+  // ClaimDueItems atomically leases items whose next_check_at has passed.
+  // Leasing rather than plain reading is what keeps several scraper replicas
+  // from fetching the same product at the same time.
+  rpc ClaimDueItems(ClaimDueItemsRequest) returns (ClaimDueItemsResponse);
+}
+
+message EnsureUserRequest {
+  int64 telegram_id = 1;
+  string username = 2;
+  string language_code = 3;
+}
+
+message EnsureUserResponse {
+  User user = 1;
+  bool created = 2;
+}
+
+message UpdateUserSettingsRequest {
+  string user_id = 1;
+  optional string default_currency = 2;
+}
+
+message UpdateUserSettingsResponse {
+  User user = 1;
+}
+
+message CreateTrackedItemRequest {
+  string user_id = 1;
+  // Raw URL as typed by the user; the server normalises and validates it.
+  string url = 2;
+  string title = 3;
+  optional Money target_price = 4;
+  int32 check_interval_seconds = 5;
+}
+
+message CreateTrackedItemResponse {
+  TrackedItem item = 1;
+}
+
+message GetTrackedItemRequest {
+  // Ownership is enforced server-side: a mismatch is reported as not found.
+  string user_id = 1;
+  string item_id = 2;
+}
+
+message GetTrackedItemResponse {
+  TrackedItem item = 1;
+}
+
+message ListTrackedItemsRequest {
+  string user_id = 1;
+  bool include_inactive = 2;
+}
+
+message ListTrackedItemsResponse {
+  repeated TrackedItem items = 1;
+}
+
+// UpdateTrackedItem applies only the fields that are present, so the caller
+// never has to read-modify-write a whole item to change one setting.
+message UpdateTrackedItemRequest {
+  string user_id = 1;
+  string item_id = 2;
+  optional Money target_price = 3;
+  // Explicitly clears the threshold; takes precedence over target_price.
+  bool clear_target_price = 4;
+  optional int32 check_interval_seconds = 5;
+  optional bool active = 6;
+  optional string title = 7;
+}
+
+message UpdateTrackedItemResponse {
+  TrackedItem item = 1;
+}
+
+message DeleteTrackedItemRequest {
+  string user_id = 1;
+  string item_id = 2;
+}
+
+message DeleteTrackedItemResponse {}
+
+message ClaimDueItemsRequest {
+  // Upper bound on returned items.
+  int32 limit = 1;
+  // How long the claim holds before another worker may retry the item.
+  int32 lease_seconds = 2;
+}
+
+message ClaimDueItemsResponse {
+  repeated TrackedItem items = 1;
+}
