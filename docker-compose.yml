@@ -10,7 +10,9 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Postgres 18+ stores data under /var/lib/postgresql/<major>/docker; mount
+      # the parent directory, not .../data (see docker-library/postgres#1259).
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U price -d price_tracker"]
       interval: 5s
@@ -30,6 +32,19 @@ services:
       timeout: 3s
       retries: 10
 
+  migrate:
+    image: migrate/migrate:v4.19.1
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://price:price@postgres:5432/price_tracker?sslmode=disable
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   core:
     build:
       context: .
@@ -46,6 +61,8 @@ services:
     ports:
       - "9090:9090"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
