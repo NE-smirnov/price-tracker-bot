@@ -110,6 +110,15 @@ message ClaimDueItemsRequest {
   int32 lease_seconds = 2;
 }
 
+message ClaimedItem {
+  TrackedItem item = 1;
+  // Currency the owner wants prices in. Sent with the lease so the scraper can
+  // convert every price it observes, not only the ones with a target attached.
+  string preferred_currency = 2;
+}
+
 message ClaimDueItemsResponse {
-  repeated TrackedItem items = 1;
+  // Numbered 2 because the element type changed: an old client decoding a new
+  // response would otherwise read a ClaimedItem as a TrackedItem.
+  repeated ClaimedItem items = 2;
 }

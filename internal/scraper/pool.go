@@ -113,7 +113,7 @@ func (p *Pool) runOnce(ctx context.Context) (int, error) {
 	}
 	p.opts.Log.DebugContext(ctx, "claimed a batch", "items", len(items))
 
-	work := make(chan *pb.TrackedItem)
+	work := make(chan *pb.ClaimedItem)
 	var wg sync.WaitGroup
 	for i := 0; i < p.opts.Workers; i++ {
 		wg.Add(1)
@@ -142,10 +142,11 @@ func (p *Pool) runOnce(ctx context.Context) (int, error) {
 }
 
 // process scrapes one item and records the outcome.
-func (p *Pool) process(ctx context.Context, item *pb.TrackedItem) {
+func (p *Pool) process(ctx context.Context, claimed *pb.ClaimedItem) {
+	item := claimed.GetItem()
 	log := p.opts.Log.With("item_id", item.GetId(), "url", item.GetUrl())
 
-	hint := targetCurrency(item)
+	hint := readingCurrency(claimed)
 	observed, err := p.opts.Scraper.Observe(ctx, item.GetUrl(), hint)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -187,11 +188,10 @@ func (p *Pool) process(ctx context.Context, item *pb.TrackedItem) {
 	p.raise(ctx, log, response.GetAlerts())
 }
 
-// convert expresses a shop price in the currency the user set their target in.
+// convert expresses a shop price in the currency the user reads prices in.
 //
-// It is skipped when the item has no target price, because there is then no
-// second currency to convert to: the alert is a new all-time low, which is
-// judged against the item's own history in its own currency.
+// It is skipped when that is the shop's own currency, since converting RUB to RUB
+// would only spend a round trip.
 func (p *Pool) convert(ctx context.Context, log *slog.Logger, price domain.Money, target domain.Currency) (domain.Money, bool) {
 	if target == "" || target == price.Currency || p.opts.Currency == nil {
 		return domain.Money{}, false
@@ -274,11 +274,17 @@ func failureReason(cause error) string {
 	}
 }
 
-func targetCurrency(item *pb.TrackedItem) domain.Currency {
-	if target := item.GetTargetPrice(); target != nil {
+// readingCurrency is the currency this item's prices should be expressed in.
+//
+// The target price wins when there is one, because that is the number the alert
+// is judged against. Otherwise the owner's default currency is used: a user who
+// reads prices in lira should see lira in /list and /stats even for an item they
+// only watch for an all-time low.
+func readingCurrency(claimed *pb.ClaimedItem) domain.Currency {
+	if target := claimed.GetItem().GetTargetPrice(); target != nil {
 		return domain.Currency(target.GetCurrency())
 	}
-	return ""
+	return domain.Currency(claimed.GetPreferredCurrency())
 }
 
 func moneyToProto(money domain.Money) *pb.Money {

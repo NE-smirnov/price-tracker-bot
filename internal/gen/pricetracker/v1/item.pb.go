@@ -824,16 +824,72 @@ func (x *ClaimDueItemsRequest) GetLeaseSeconds() int32 {
 	return 0
 }
 
+type ClaimedItem struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Item  *TrackedItem           `protobuf:"bytes,1,opt,name=item,proto3" json:"item,omitempty"`
+	// Currency the owner wants prices in. Sent with the lease so the scraper can
+	// convert every price it observes, not only the ones with a target attached.
+	PreferredCurrency string `protobuf:"bytes,2,opt,name=preferred_currency,json=preferredCurrency,proto3" json:"preferred_currency,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ClaimedItem) Reset() {
+	*x = ClaimedItem{}
+	mi := &file_pricetracker_v1_item_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimedItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimedItem) ProtoMessage() {}
+
+func (x *ClaimedItem) ProtoReflect() protoreflect.Message {
+	mi := &file_pricetracker_v1_item_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimedItem.ProtoReflect.Descriptor instead.
+func (*ClaimedItem) Descriptor() ([]byte, []int) {
+	return file_pricetracker_v1_item_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ClaimedItem) GetItem() *TrackedItem {
+	if x != nil {
+		return x.Item
+	}
+	return nil
+}
+
+func (x *ClaimedItem) GetPreferredCurrency() string {
+	if x != nil {
+		return x.PreferredCurrency
+	}
+	return ""
+}
+
 type ClaimDueItemsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Items         []*TrackedItem         `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Numbered 2 because the element type changed: an old client decoding a new
+	// response would otherwise read a ClaimedItem as a TrackedItem.
+	Items         []*ClaimedItem `protobuf:"bytes,2,rep,name=items,proto3" json:"items,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ClaimDueItemsResponse) Reset() {
 	*x = ClaimDueItemsResponse{}
-	mi := &file_pricetracker_v1_item_proto_msgTypes[15]
+	mi := &file_pricetracker_v1_item_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -845,7 +901,7 @@ func (x *ClaimDueItemsResponse) String() string {
 func (*ClaimDueItemsResponse) ProtoMessage() {}
 
 func (x *ClaimDueItemsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pricetracker_v1_item_proto_msgTypes[15]
+	mi := &file_pricetracker_v1_item_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -858,10 +914,10 @@ func (x *ClaimDueItemsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimDueItemsResponse.ProtoReflect.Descriptor instead.
 func (*ClaimDueItemsResponse) Descriptor() ([]byte, []int) {
-	return file_pricetracker_v1_item_proto_rawDescGZIP(), []int{15}
+	return file_pricetracker_v1_item_proto_rawDescGZIP(), []int{16}
 }
 
-func (x *ClaimDueItemsResponse) GetItems() []*TrackedItem {
+func (x *ClaimDueItemsResponse) GetItems() []*ClaimedItem {
 	if x != nil {
 		return x.Items
 	}
@@ -926,9 +982,12 @@ const file_pricetracker_v1_item_proto_rawDesc = "" +
 	"\x19DeleteTrackedItemResponse\"Q\n" +
 	"\x14ClaimDueItemsRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12#\n" +
-	"\rlease_seconds\x18\x02 \x01(\x05R\fleaseSeconds\"K\n" +
+	"\rlease_seconds\x18\x02 \x01(\x05R\fleaseSeconds\"n\n" +
+	"\vClaimedItem\x120\n" +
+	"\x04item\x18\x01 \x01(\v2\x1c.pricetracker.v1.TrackedItemR\x04item\x12-\n" +
+	"\x12preferred_currency\x18\x02 \x01(\tR\x11preferredCurrency\"K\n" +
 	"\x15ClaimDueItemsResponse\x122\n" +
-	"\x05items\x18\x01 \x03(\v2\x1c.pricetracker.v1.TrackedItemR\x05items2\xc3\x06\n" +
+	"\x05items\x18\x02 \x03(\v2\x1c.pricetracker.v1.ClaimedItemR\x05items2\xc3\x06\n" +
 	"\vItemService\x12U\n" +
 	"\n" +
 	"EnsureUser\x12\".pricetracker.v1.EnsureUserRequest\x1a#.pricetracker.v1.EnsureUserResponse\x12m\n" +
@@ -953,7 +1012,7 @@ func file_pricetracker_v1_item_proto_rawDescGZIP() []byte {
 	return file_pricetracker_v1_item_proto_rawDescData
 }
 
-var file_pricetracker_v1_item_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_pricetracker_v1_item_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_pricetracker_v1_item_proto_goTypes = []any{
 	(*EnsureUserRequest)(nil),          // 0: pricetracker.v1.EnsureUserRequest
 	(*EnsureUserResponse)(nil),         // 1: pricetracker.v1.EnsureUserResponse
@@ -970,42 +1029,44 @@ var file_pricetracker_v1_item_proto_goTypes = []any{
 	(*DeleteTrackedItemRequest)(nil),   // 12: pricetracker.v1.DeleteTrackedItemRequest
 	(*DeleteTrackedItemResponse)(nil),  // 13: pricetracker.v1.DeleteTrackedItemResponse
 	(*ClaimDueItemsRequest)(nil),       // 14: pricetracker.v1.ClaimDueItemsRequest
-	(*ClaimDueItemsResponse)(nil),      // 15: pricetracker.v1.ClaimDueItemsResponse
-	(*User)(nil),                       // 16: pricetracker.v1.User
-	(*Money)(nil),                      // 17: pricetracker.v1.Money
-	(*TrackedItem)(nil),                // 18: pricetracker.v1.TrackedItem
+	(*ClaimedItem)(nil),                // 15: pricetracker.v1.ClaimedItem
+	(*ClaimDueItemsResponse)(nil),      // 16: pricetracker.v1.ClaimDueItemsResponse
+	(*User)(nil),                       // 17: pricetracker.v1.User
+	(*Money)(nil),                      // 18: pricetracker.v1.Money
+	(*TrackedItem)(nil),                // 19: pricetracker.v1.TrackedItem
 }
 var file_pricetracker_v1_item_proto_depIdxs = []int32{
-	16, // 0: pricetracker.v1.EnsureUserResponse.user:type_name -> pricetracker.v1.User
-	16, // 1: pricetracker.v1.UpdateUserSettingsResponse.user:type_name -> pricetracker.v1.User
-	17, // 2: pricetracker.v1.CreateTrackedItemRequest.target_price:type_name -> pricetracker.v1.Money
-	18, // 3: pricetracker.v1.CreateTrackedItemResponse.item:type_name -> pricetracker.v1.TrackedItem
-	18, // 4: pricetracker.v1.GetTrackedItemResponse.item:type_name -> pricetracker.v1.TrackedItem
-	18, // 5: pricetracker.v1.ListTrackedItemsResponse.items:type_name -> pricetracker.v1.TrackedItem
-	17, // 6: pricetracker.v1.UpdateTrackedItemRequest.target_price:type_name -> pricetracker.v1.Money
-	18, // 7: pricetracker.v1.UpdateTrackedItemResponse.item:type_name -> pricetracker.v1.TrackedItem
-	18, // 8: pricetracker.v1.ClaimDueItemsResponse.items:type_name -> pricetracker.v1.TrackedItem
-	0,  // 9: pricetracker.v1.ItemService.EnsureUser:input_type -> pricetracker.v1.EnsureUserRequest
-	2,  // 10: pricetracker.v1.ItemService.UpdateUserSettings:input_type -> pricetracker.v1.UpdateUserSettingsRequest
-	4,  // 11: pricetracker.v1.ItemService.CreateTrackedItem:input_type -> pricetracker.v1.CreateTrackedItemRequest
-	6,  // 12: pricetracker.v1.ItemService.GetTrackedItem:input_type -> pricetracker.v1.GetTrackedItemRequest
-	8,  // 13: pricetracker.v1.ItemService.ListTrackedItems:input_type -> pricetracker.v1.ListTrackedItemsRequest
-	10, // 14: pricetracker.v1.ItemService.UpdateTrackedItem:input_type -> pricetracker.v1.UpdateTrackedItemRequest
-	12, // 15: pricetracker.v1.ItemService.DeleteTrackedItem:input_type -> pricetracker.v1.DeleteTrackedItemRequest
-	14, // 16: pricetracker.v1.ItemService.ClaimDueItems:input_type -> pricetracker.v1.ClaimDueItemsRequest
-	1,  // 17: pricetracker.v1.ItemService.EnsureUser:output_type -> pricetracker.v1.EnsureUserResponse
-	3,  // 18: pricetracker.v1.ItemService.UpdateUserSettings:output_type -> pricetracker.v1.UpdateUserSettingsResponse
-	5,  // 19: pricetracker.v1.ItemService.CreateTrackedItem:output_type -> pricetracker.v1.CreateTrackedItemResponse
-	7,  // 20: pricetracker.v1.ItemService.GetTrackedItem:output_type -> pricetracker.v1.GetTrackedItemResponse
-	9,  // 21: pricetracker.v1.ItemService.ListTrackedItems:output_type -> pricetracker.v1.ListTrackedItemsResponse
-	11, // 22: pricetracker.v1.ItemService.UpdateTrackedItem:output_type -> pricetracker.v1.UpdateTrackedItemResponse
-	13, // 23: pricetracker.v1.ItemService.DeleteTrackedItem:output_type -> pricetracker.v1.DeleteTrackedItemResponse
-	15, // 24: pricetracker.v1.ItemService.ClaimDueItems:output_type -> pricetracker.v1.ClaimDueItemsResponse
-	17, // [17:25] is the sub-list for method output_type
-	9,  // [9:17] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	17, // 0: pricetracker.v1.EnsureUserResponse.user:type_name -> pricetracker.v1.User
+	17, // 1: pricetracker.v1.UpdateUserSettingsResponse.user:type_name -> pricetracker.v1.User
+	18, // 2: pricetracker.v1.CreateTrackedItemRequest.target_price:type_name -> pricetracker.v1.Money
+	19, // 3: pricetracker.v1.CreateTrackedItemResponse.item:type_name -> pricetracker.v1.TrackedItem
+	19, // 4: pricetracker.v1.GetTrackedItemResponse.item:type_name -> pricetracker.v1.TrackedItem
+	19, // 5: pricetracker.v1.ListTrackedItemsResponse.items:type_name -> pricetracker.v1.TrackedItem
+	18, // 6: pricetracker.v1.UpdateTrackedItemRequest.target_price:type_name -> pricetracker.v1.Money
+	19, // 7: pricetracker.v1.UpdateTrackedItemResponse.item:type_name -> pricetracker.v1.TrackedItem
+	19, // 8: pricetracker.v1.ClaimedItem.item:type_name -> pricetracker.v1.TrackedItem
+	15, // 9: pricetracker.v1.ClaimDueItemsResponse.items:type_name -> pricetracker.v1.ClaimedItem
+	0,  // 10: pricetracker.v1.ItemService.EnsureUser:input_type -> pricetracker.v1.EnsureUserRequest
+	2,  // 11: pricetracker.v1.ItemService.UpdateUserSettings:input_type -> pricetracker.v1.UpdateUserSettingsRequest
+	4,  // 12: pricetracker.v1.ItemService.CreateTrackedItem:input_type -> pricetracker.v1.CreateTrackedItemRequest
+	6,  // 13: pricetracker.v1.ItemService.GetTrackedItem:input_type -> pricetracker.v1.GetTrackedItemRequest
+	8,  // 14: pricetracker.v1.ItemService.ListTrackedItems:input_type -> pricetracker.v1.ListTrackedItemsRequest
+	10, // 15: pricetracker.v1.ItemService.UpdateTrackedItem:input_type -> pricetracker.v1.UpdateTrackedItemRequest
+	12, // 16: pricetracker.v1.ItemService.DeleteTrackedItem:input_type -> pricetracker.v1.DeleteTrackedItemRequest
+	14, // 17: pricetracker.v1.ItemService.ClaimDueItems:input_type -> pricetracker.v1.ClaimDueItemsRequest
+	1,  // 18: pricetracker.v1.ItemService.EnsureUser:output_type -> pricetracker.v1.EnsureUserResponse
+	3,  // 19: pricetracker.v1.ItemService.UpdateUserSettings:output_type -> pricetracker.v1.UpdateUserSettingsResponse
+	5,  // 20: pricetracker.v1.ItemService.CreateTrackedItem:output_type -> pricetracker.v1.CreateTrackedItemResponse
+	7,  // 21: pricetracker.v1.ItemService.GetTrackedItem:output_type -> pricetracker.v1.GetTrackedItemResponse
+	9,  // 22: pricetracker.v1.ItemService.ListTrackedItems:output_type -> pricetracker.v1.ListTrackedItemsResponse
+	11, // 23: pricetracker.v1.ItemService.UpdateTrackedItem:output_type -> pricetracker.v1.UpdateTrackedItemResponse
+	13, // 24: pricetracker.v1.ItemService.DeleteTrackedItem:output_type -> pricetracker.v1.DeleteTrackedItemResponse
+	16, // 25: pricetracker.v1.ItemService.ClaimDueItems:output_type -> pricetracker.v1.ClaimDueItemsResponse
+	18, // [18:26] is the sub-list for method output_type
+	10, // [10:18] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_pricetracker_v1_item_proto_init() }
@@ -1023,7 +1084,7 @@ func file_pricetracker_v1_item_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pricetracker_v1_item_proto_rawDesc), len(file_pricetracker_v1_item_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

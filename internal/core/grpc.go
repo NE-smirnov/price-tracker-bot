@@ -144,13 +144,16 @@ func (s *ItemServer) DeleteTrackedItem(ctx context.Context, req *pb.DeleteTracke
 
 // ClaimDueItems leases the batch of items a scraper should fetch next.
 func (s *ItemServer) ClaimDueItems(ctx context.Context, req *pb.ClaimDueItemsRequest) (*pb.ClaimDueItemsResponse, error) {
-	items, err := s.repo.ClaimDueItems(ctx, int(req.GetLimit()), secondsToDuration(req.GetLeaseSeconds()))
+	claimed, err := s.repo.ClaimDueItems(ctx, int(req.GetLimit()), secondsToDuration(req.GetLeaseSeconds()))
 	if err != nil {
 		return nil, s.fail("claim due items", err)
 	}
-	out := make([]*pb.TrackedItem, 0, len(items))
-	for _, item := range items {
-		out = append(out, itemToProto(item))
+	out := make([]*pb.ClaimedItem, 0, len(claimed))
+	for i := range claimed {
+		out = append(out, &pb.ClaimedItem{
+			Item:              itemToProto(claimed[i].Item),
+			PreferredCurrency: string(claimed[i].PreferredCurrency),
+		})
 	}
 	return &pb.ClaimDueItemsResponse{Items: out}, nil
 }

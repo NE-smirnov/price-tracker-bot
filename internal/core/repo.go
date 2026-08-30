@@ -356,17 +356,32 @@ WITH due AS (
      -- SKIP LOCKED is what lets several scraper replicas pull disjoint batches
      -- without coordinating through a broker.
      FOR UPDATE SKIP LOCKED
+),
+leased AS (
+    UPDATE tracked_items i
+       SET claimed_until = now() + make_interval(secs => $2)
+      FROM due
+     WHERE i.id = due.id
+    -- Qualified with the alias: the joined CTE also has an "id" column.
+    RETURNING ` + itemColumnsQualified + `
 )
-UPDATE tracked_items i
-   SET claimed_until = now() + make_interval(secs => $2)
-  FROM due
- WHERE i.id = due.id
--- Qualified with the alias: the joined CTE also has an "id" column.
-RETURNING ` + itemColumnsQualified
+SELECT leased.*, u.default_currency
+  FROM leased
+  JOIN users u ON u.id = leased.user_id`
+
+// ClaimedItem is a leased item together with the currency its owner reads prices
+// in. The currency travels with the lease so the scraper does not have to ask
+// core about the user separately for every item in a batch.
+type ClaimedItem struct {
+	Item domain.TrackedItem
+	// PreferredCurrency is the owner's default currency, which may differ from the
+	// item's target currency and is set even when the item has no target at all.
+	PreferredCurrency domain.Currency
+}
 
 // ClaimDueItems leases the items whose next check is due. The lease expires on
 // its own, so a worker that dies mid-scrape does not strand its batch.
-func (r *Repo) ClaimDueItems(ctx context.Context, limit int, lease time.Duration) ([]domain.TrackedItem, error) {
+func (r *Repo) ClaimDueItems(ctx context.Context, limit int, lease time.Duration) ([]ClaimedItem, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
@@ -380,13 +395,13 @@ func (r *Repo) ClaimDueItems(ctx context.Context, limit int, lease time.Duration
 	}
 	defer rows.Close()
 
-	var items []domain.TrackedItem
+	var items []ClaimedItem
 	for rows.Next() {
-		item, err := scanItemNoSnapshot(rows)
+		item, currency, err := scanClaimedItem(rows)
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, item)
+		items = append(items, ClaimedItem{Item: item, PreferredCurrency: currency})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("claim due items: %w", err)

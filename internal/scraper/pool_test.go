@@ -23,7 +23,7 @@ import (
 type stubItems struct {
 	pb.ItemServiceClient
 	mu      sync.Mutex
-	batches [][]*pb.TrackedItem
+	batches [][]*pb.ClaimedItem
 	calls   int
 }
 
@@ -37,6 +37,12 @@ func (s *stubItems) ClaimDueItems(context.Context, *pb.ClaimDueItemsRequest, ...
 	batch := s.batches[0]
 	s.batches = s.batches[1:]
 	return &pb.ClaimDueItemsResponse{Items: batch}, nil
+}
+
+// claimed wraps an item the way core hands it out, so tests exercise the same
+// shape the pool sees in production.
+func claimed(item *pb.TrackedItem, preferred string) *pb.ClaimedItem {
+	return &pb.ClaimedItem{Item: item, PreferredCurrency: preferred}
 }
 
 type stubPricing struct {
@@ -155,7 +161,7 @@ func TestPoolRecordsAScrapedPrice(t *testing.T) {
 	pricing := &stubPricing{}
 	pool := newTestPool(items, pricing, nil, &stubAlerts{})
 
-	pool.process(context.Background(), &pb.TrackedItem{Id: "item-1", Url: server.URL})
+	pool.process(context.Background(), claimed(&pb.TrackedItem{Id: "item-1", Url: server.URL}, ""))
 
 	snapshots, failures := pricing.recorded()
 	if len(snapshots) != 1 || len(failures) != 0 {
@@ -182,11 +188,11 @@ func TestPoolConvertsIntoTheTargetCurrency(t *testing.T) {
 	currency := &stubCurrency{rateE8: 8_500_000_000} // 1 USD = 85 RUB
 	pool := newTestPool(&stubItems{}, pricing, currency, &stubAlerts{})
 
-	pool.process(context.Background(), &pb.TrackedItem{
+	pool.process(context.Background(), claimed(&pb.TrackedItem{
 		Id:          "item-1",
 		Url:         server.URL,
 		TargetPrice: &pb.Money{Amount: 200000, Currency: "RUB"},
-	})
+	}, ""))
 
 	snapshots, _ := pricing.recorded()
 	if len(snapshots) != 1 {
@@ -206,11 +212,11 @@ func TestPoolSkipsConversionWithinOneCurrency(t *testing.T) {
 	currency := &stubCurrency{rateE8: 100_000_000}
 	pool := newTestPool(&stubItems{}, &stubPricing{}, currency, &stubAlerts{})
 
-	pool.process(context.Background(), &pb.TrackedItem{
+	pool.process(context.Background(), claimed(&pb.TrackedItem{
 		Id:          "item-1",
 		Url:         server.URL,
 		TargetPrice: &pb.Money{Amount: 150000, Currency: "RUB"},
-	})
+	}, ""))
 
 	currency.mu.Lock()
 	defer currency.mu.Unlock()
@@ -227,11 +233,11 @@ func TestPoolStoresThePriceWhenConversionFails(t *testing.T) {
 	currency := &stubCurrency{err: errors.New("rate provider is down")}
 	pool := newTestPool(&stubItems{}, pricing, currency, &stubAlerts{})
 
-	pool.process(context.Background(), &pb.TrackedItem{
+	pool.process(context.Background(), claimed(&pb.TrackedItem{
 		Id:          "item-1",
 		Url:         server.URL,
 		TargetPrice: &pb.Money{Amount: 200000, Currency: "RUB"},
-	})
+	}, ""))
 
 	snapshots, failures := pricing.recorded()
 	if len(snapshots) != 1 || len(failures) != 0 {
@@ -251,7 +257,7 @@ func TestPoolRecordsAFailureWithAStableReason(t *testing.T) {
 	pricing := &stubPricing{}
 	pool := newTestPool(&stubItems{}, pricing, nil, &stubAlerts{})
 
-	pool.process(context.Background(), &pb.TrackedItem{Id: "item-1", Url: server.URL})
+	pool.process(context.Background(), claimed(&pb.TrackedItem{Id: "item-1", Url: server.URL}, ""))
 
 	snapshots, failures := pricing.recorded()
 	if len(snapshots) != 0 || len(failures) != 1 {
@@ -277,7 +283,7 @@ func TestPoolForwardsAlerts(t *testing.T) {
 	}}}
 	pool := newTestPool(&stubItems{}, pricing, nil, alerts)
 
-	pool.process(context.Background(), &pb.TrackedItem{Id: "item-1", Url: server.URL})
+	pool.process(context.Background(), claimed(&pb.TrackedItem{Id: "item-1", Url: server.URL}, ""))
 
 	pushed := alerts.all()
 	if len(pushed) != 1 {
@@ -290,10 +296,10 @@ func TestPoolForwardsAlerts(t *testing.T) {
 
 func TestPoolRunDrainsABatchAndStops(t *testing.T) {
 	server := ldJSONServer(t, "1499.00", "RUB")
-	items := &stubItems{batches: [][]*pb.TrackedItem{{
-		{Id: "item-1", Url: server.URL},
-		{Id: "item-2", Url: server.URL},
-		{Id: "item-3", Url: server.URL},
+	items := &stubItems{batches: [][]*pb.ClaimedItem{{
+		claimed(&pb.TrackedItem{Id: "item-1", Url: server.URL}, ""),
+		claimed(&pb.TrackedItem{Id: "item-2", Url: server.URL}, ""),
+		claimed(&pb.TrackedItem{Id: "item-3", Url: server.URL}, ""),
 	}}}
 	pricing := &stubPricing{}
 	pool := newTestPool(items, pricing, nil, &stubAlerts{})
@@ -346,4 +352,50 @@ func (b *brokenItems) count() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.calls
+}
+
+func TestPoolConvertsWithoutATargetPrice(t *testing.T) {
+	// A user who reads prices in USD should see USD even for an item they only
+	// watch for an all-time low, so the owner's currency is used when the item
+	// carries no threshold of its own.
+	server := ldJSONServer(t, "1499.00", "RUB")
+	pricing := &stubPricing{}
+	currency := &stubCurrency{rateE8: 8_500_000_000} // 1 USD = 85 RUB
+	pool := newTestPool(&stubItems{}, pricing, currency, &stubAlerts{})
+
+	pool.process(context.Background(), claimed(&pb.TrackedItem{
+		Id:  "item-1",
+		Url: server.URL,
+	}, "USD"))
+
+	snapshots, _ := pricing.recorded()
+	if len(snapshots) != 1 {
+		t.Fatalf("recorded %d snapshots, want 1", len(snapshots))
+	}
+	converted := snapshots[0].GetConvertedPrice()
+	if converted == nil || converted.GetCurrency() != "USD" {
+		t.Fatalf("converted price = %v, want an amount in USD", converted)
+	}
+}
+
+func TestPoolPrefersTheTargetCurrencyOverTheOwnerDefault(t *testing.T) {
+	// The threshold is what the alert is judged against, so its currency wins.
+	server := ldJSONServer(t, "1499.00", "RUB")
+	pricing := &stubPricing{}
+	currency := &stubCurrency{rateE8: 100_000_000}
+	pool := newTestPool(&stubItems{}, pricing, currency, &stubAlerts{})
+
+	pool.process(context.Background(), claimed(&pb.TrackedItem{
+		Id:          "item-1",
+		Url:         server.URL,
+		TargetPrice: &pb.Money{Amount: 5000, Currency: "TRY"},
+	}, "USD"))
+
+	snapshots, _ := pricing.recorded()
+	if len(snapshots) != 1 {
+		t.Fatalf("recorded %d snapshots, want 1", len(snapshots))
+	}
+	if got := snapshots[0].GetConvertedPrice().GetCurrency(); got != "TRY" {
+		t.Fatalf("converted into %s, want TRY", got)
+	}
 }

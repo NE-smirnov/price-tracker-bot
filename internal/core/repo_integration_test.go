@@ -403,8 +403,31 @@ func TestClaimDueItemsSkipsInactiveAndFutureItems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	if len(claimed) != 1 || claimed[0].ID != due.ID {
+	if len(claimed) != 1 || claimed[0].Item.ID != due.ID {
 		t.Fatalf("expected only the active due item, got %d", len(claimed))
+	}
+}
+
+func TestClaimDueItemsCarriesTheOwnerCurrency(t *testing.T) {
+	// The scraper converts every price it observes, and it learns which currency to
+	// convert into from the lease itself rather than a second round trip per item.
+	repo, ctx := newTestRepo(t)
+	user := mustUser(t, repo, ctx, 9101)
+	try := domain.Currency("TRY")
+	if _, err := repo.UpdateUserSettings(ctx, user.ID, &try); err != nil {
+		t.Fatalf("set currency: %v", err)
+	}
+	mustItem(t, repo, ctx, CreateItemInput{UserID: user.ID, URL: "https://shop.example.com/p/one"})
+
+	claimed, err := repo.ClaimDueItems(ctx, 10, time.Minute)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("claimed %d items, want 1", len(claimed))
+	}
+	if claimed[0].PreferredCurrency != try {
+		t.Fatalf("preferred currency = %q, want TRY", claimed[0].PreferredCurrency)
 	}
 }
 

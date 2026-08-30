@@ -155,14 +155,6 @@ func previousPriceIn(s *domain.PriceSnapshot, want domain.Currency) *domain.Mone
 	return nil
 }
 
-func previousPrice(s *domain.PriceSnapshot) *domain.Money {
-	if s == nil {
-		return nil
-	}
-	p := s.Price
-	return &p
-}
-
 func dedupKey(kind domain.AlertKind, itemID, discriminator string) string {
 	return strings.Join([]string{string(kind), itemID, discriminator}, ":")
 }

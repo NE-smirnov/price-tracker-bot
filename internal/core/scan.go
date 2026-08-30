@@ -60,6 +60,31 @@ func scanItem(s scanner) (domain.TrackedItem, error) {
 	return item, nil
 }
 
+// scanClaimedItem maps the claim projection: the item columns followed by the
+// owner's default currency.
+func scanClaimedItem(s scanner) (domain.TrackedItem, domain.Currency, error) {
+	var (
+		item           domain.TrackedItem
+		intervalSecs   int32
+		targetAmount   *int64
+		targetCurrency *string
+		ownerCurrency  string
+	)
+	if err := s.Scan(
+		&item.ID, &item.UserID, &item.URL, &item.Title,
+		&targetAmount, &targetCurrency,
+		&intervalSecs, &item.Active,
+		&item.NextCheckAt, &item.FailureStreak, &item.LastError,
+		&item.CreatedAt, &item.UpdatedAt,
+		&ownerCurrency,
+	); err != nil {
+		return domain.TrackedItem{}, "", err
+	}
+	item.CheckInterval = time.Duration(intervalSecs) * time.Second
+	item.TargetPrice = money(targetAmount, targetCurrency)
+	return item, domain.Currency(ownerCurrency), nil
+}
+
 // scanItemNoSnapshot maps the itemColumnsNoSnapshot projection.
 func scanItemNoSnapshot(s scanner) (domain.TrackedItem, error) {
 	var (
