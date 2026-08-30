@@ -22,22 +22,10 @@ var ErrNoPrice = errors.New("no price found on the page")
 // changed".
 var ErrBlocked = errors.New("blocked by the shop's anti-bot protection")
 
-// minorUnitExponent holds the ISO-4217 exponent for currencies that are not
-// two-decimal. Money is stored in minor units, so getting this wrong would
-// silently multiply or divide a price by 100.
-var minorUnitExponent = map[domain.Currency]int{
-	"JPY": 0, "KRW": 0, "VND": 0, "CLP": 0, "ISK": 0, "PYG": 0,
-	"RWF": 0, "UGX": 0, "VUV": 0, "XAF": 0, "XOF": 0, "XPF": 0, "DJF": 0, "GNF": 0, "KMF": 0,
-	"BHD": 3, "IQD": 3, "JOD": 3, "KWD": 3, "LYD": 3, "OMR": 3, "TND": 3,
-}
-
-// MinorUnits returns how many decimal places a currency has.
-func MinorUnits(c domain.Currency) int {
-	if exp, ok := minorUnitExponent[c]; ok {
-		return exp
-	}
-	return 2
-}
+// MinorUnits returns how many decimal places a currency has. The table itself
+// belongs to domain, so the scraper, the bot and the converter cannot disagree
+// about what a stored amount means.
+func MinorUnits(c domain.Currency) int { return domain.MinorUnits(c) }
 
 // currencyBySymbol maps the symbols and words shops actually print next to a
 // price onto ISO codes. Longer keys are matched first so "TL" does not shadow

@@ -29,7 +29,33 @@ type Money struct {
 	Currency Currency
 }
 
-const minorUnitScale = 100
+// MinorUnits is how many decimal digits a currency prints, per ISO 4217.
+//
+// It lives in domain because every layer needs the same answer: the bot when it
+// renders a price, the scraper when it parses one off a page, and the converter
+// when it moves an amount between two currencies with different precision.
+// Getting it wrong shifts a price by a factor of ten or a hundred.
+func MinorUnits(c Currency) int {
+	switch c {
+	// Currencies with no subunit in circulation.
+	case "JPY", "KRW", "VND", "CLP", "ISK", "HUF", "TWD", "XAF", "XOF", "UGX", "RWF":
+		return 0
+	// Currencies with a thousandth subunit.
+	case "KWD", "BHD", "OMR", "JOD", "TND", "LYD", "IQD":
+		return 3
+	default:
+		return 2
+	}
+}
+
+// scale returns 10^MinorUnits as an integer multiplier.
+func scale(c Currency) int64 {
+	value := int64(1)
+	for i := 0; i < MinorUnits(c); i++ {
+		value *= 10
+	}
+	return value
+}
 
 // NewMoney builds a Money value from minor units.
 func NewMoney(minorUnits int64, currency Currency) Money {
@@ -95,29 +121,38 @@ func ParseMoney(input string, fallback Currency) (Money, error) {
 		return Money{}, fmt.Errorf("%w: negative price", ErrInvalidMoney)
 	}
 
+	exp := MinorUnits(currency)
 	var minor int64
+	roundUp := false
 	switch {
-	case fracPart == "":
-		minor = 0
-	case len(fracPart) == 1:
-		d, convErr := strconv.ParseInt(fracPart, 10, 64)
-		if convErr != nil {
-			return Money{}, fmt.Errorf("%w: %q", ErrInvalidMoney, input)
+	case len(fracPart) <= exp:
+		// Pad the missing digits: "19.9" in a two-decimal currency is 19.90.
+		padded := fracPart + strings.Repeat("0", exp-len(fracPart))
+		if padded != "" {
+			d, convErr := strconv.ParseInt(padded, 10, 64)
+			if convErr != nil {
+				return Money{}, fmt.Errorf("%w: %q", ErrInvalidMoney, input)
+			}
+			minor = d
 		}
-		minor = d * 10
 	default:
-		d, convErr := strconv.ParseInt(fracPart[:2], 10, 64)
-		if convErr != nil {
-			return Money{}, fmt.Errorf("%w: %q", ErrInvalidMoney, input)
+		// More digits than the currency has: keep the significant ones and round
+		// half up on the first dropped digit.
+		if exp > 0 {
+			d, convErr := strconv.ParseInt(fracPart[:exp], 10, 64)
+			if convErr != nil {
+				return Money{}, fmt.Errorf("%w: %q", ErrInvalidMoney, input)
+			}
+			minor = d
 		}
-		minor = d
-		// Round half-up on the third decimal digit.
-		if len(fracPart) > 2 && fracPart[2] >= '5' && fracPart[2] <= '9' {
-			minor++
-		}
+		roundUp = fracPart[exp] >= '5'
 	}
 
-	return Money{Amount: units*minorUnitScale + minor, Currency: currency}, nil
+	amount := units*scale(currency) + minor
+	if roundUp {
+		amount++
+	}
+	return Money{Amount: amount, Currency: currency}, nil
 }
 
 // splitDecimal separates the integer and fractional parts of a numeric literal,
@@ -168,7 +203,8 @@ func stripSeparators(s string) string {
 	return strings.NewReplacer(".", "", ",", "").Replace(s)
 }
 
-// String renders the amount as "19.99 USD".
+// String renders the amount with the precision its currency actually uses:
+// "19.99 USD", "1250 JPY", "12.345 KWD".
 func (m Money) String() string {
 	sign := ""
 	amount := m.Amount
@@ -176,7 +212,15 @@ func (m Money) String() string {
 		sign = "-"
 		amount = -amount
 	}
-	return fmt.Sprintf("%s%d.%02d %s", sign, amount/minorUnitScale, amount%minorUnitScale, m.Currency)
+
+	exp := MinorUnits(m.Currency)
+	if exp == 0 {
+		// Printing "1250.00 JPY" would invent a subunit the currency does not
+		// have; a yen price is a whole number.
+		return fmt.Sprintf("%s%d %s", sign, amount, m.Currency)
+	}
+	factor := scale(m.Currency)
+	return fmt.Sprintf("%s%d.%0*d %s", sign, amount/factor, exp, amount%factor, m.Currency)
 }
 
 // IsZero reports whether the amount is unset.

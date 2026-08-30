@@ -49,6 +49,46 @@ type Core struct {
 	StatsTTL time.Duration
 }
 
+// Currency configures the exchange-rate service.
+type Currency struct {
+	Common
+	GRPCAddr string
+	// ProviderURL is the rate source. Empty means the built-in default, which is
+	// the only keyless provider that publishes RUB.
+	ProviderURL     string
+	ProviderTimeout time.Duration
+	// RateTTL is how long a fetched rate table is reused. Rates published daily
+	// do not need to be fetched more often than hourly, and a free provider's
+	// quota is the real constraint.
+	RateTTL   time.Duration
+	RedisAddr string
+	RedisPass string
+	RedisDB   int
+}
+
+// LoadCurrency reads the currency service configuration.
+func LoadCurrency() (Currency, error) {
+	cfg := Currency{
+		Common:      LoadCommon(),
+		GRPCAddr:    str("CURRENCY_GRPC_LISTEN", ":9091"),
+		ProviderURL: str("CURRENCY_PROVIDER_URL", ""),
+		RedisAddr:   str("REDIS_ADDR", ""),
+		RedisPass:   str("REDIS_PASSWORD", ""),
+	}
+
+	var err error
+	if cfg.RedisDB, err = intVal("REDIS_DB", 0); err != nil {
+		return Currency{}, err
+	}
+	if cfg.RateTTL, err = Duration("CURRENCY_RATE_TTL", time.Hour); err != nil {
+		return Currency{}, err
+	}
+	if cfg.ProviderTimeout, err = Duration("CURRENCY_PROVIDER_TIMEOUT", 10*time.Second); err != nil {
+		return Currency{}, err
+	}
+	return cfg, nil
+}
+
 // LoadCore reads the core service configuration.
 func LoadCore() (Core, error) {
 	cfg := Core{

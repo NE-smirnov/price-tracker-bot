@@ -28,10 +28,10 @@ type RecordSnapshotInput struct {
 	// carried forward, so the stock transition is still recorded; without it a
 	// shop that removes the price of an unavailable product could never produce
 	// a "back in stock" alert.
-	Price *domain.Money
-	Converted     *domain.Money
-	InStock       bool
-	ObservedAt    time.Time
+	Price      *domain.Money
+	Converted  *domain.Money
+	InStock    bool
+	ObservedAt time.Time
 	// ObservedTitle fills in the item title when it was added without one.
 	ObservedTitle string
 }
