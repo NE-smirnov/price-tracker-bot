@@ -79,6 +79,7 @@ func statsToProto(s domain.Stats) *pb.Stats {
 		Min:             moneyToProto(s.Min),
 		Max:             moneyToProto(s.Max),
 		Avg:             moneyToProto(s.Avg),
+		First:           moneyToProto(s.First),
 		Trend:           trendToProto(s.Trend()),
 		ChangePercent:   s.ChangePercent(),
 		Samples:         int32(s.Samples),

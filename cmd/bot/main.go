@@ -42,10 +42,11 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	store, err := buildStore(cfg, log)
+	store, closeStore, err := buildStore(cfg, log)
 	if err != nil {
 		return err
 	}
+	defer closeStore()
 
 	b, err := bot.New(store, bot.Options{
 		Token:        cfg.Token,
@@ -67,16 +68,31 @@ func run() error {
 	return nil
 }
 
-// buildStore selects the Store implementation. The gRPC-backed one is added
-// together with the core service; until then the bot runs on an in-memory store.
-func buildStore(cfg config.Bot, log *slog.Logger) (bot.Store, error) {
+// buildStore selects the Store implementation and returns a cleanup function.
+//
+// The bot does not verify that core is reachable here on purpose: the gRPC
+// client connects lazily and retries, so a bot started before core comes up
+// heals by itself instead of crash-looping.
+func buildStore(cfg config.Bot, log *slog.Logger) (bot.Store, func(), error) {
 	switch cfg.Storage {
 	case "memory":
 		log.Warn("using in-memory storage: data is lost on restart and price history is synthetic")
-		return bot.NewMemStore(true), nil
+		return bot.NewMemStore(true), func() {}, nil
 	case "core":
-		return nil, errors.New("BOT_STORAGE=core is not wired yet: the core service arrives in the next step")
+		store, err := bot.NewCoreStore(bot.CoreStoreOptions{
+			Addr:        cfg.CoreGRPCAddr,
+			CallTimeout: 10 * time.Second,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		log.Info("using core storage", slog.String("addr", cfg.CoreGRPCAddr))
+		return store, func() {
+			if closeErr := store.Close(); closeErr != nil {
+				log.Warn("closing core connection", slog.String("error", closeErr.Error()))
+			}
+		}, nil
 	default:
-		return nil, fmt.Errorf("unknown BOT_STORAGE %q", cfg.Storage)
+		return nil, nil, fmt.Errorf("unknown BOT_STORAGE %q", cfg.Storage)
 	}
 }

@@ -15,8 +15,10 @@
 > - `cmd/core` — сервис-владелец данных: `ItemService` и `PricingService` по
 >   gRPC, PostgreSQL как источник правды, Redis как кэш статистики.
 >
-> Следующие шаги: перевести бота на `BOT_STORAGE=core`, затем `scraper`,
-> `currency` и `notifier`.
+> Бот умеет работать против core: `BOT_STORAGE=core` переключает его с
+> in-memory хранилища на gRPC-клиент, интерфейс `bot.Store` при этом не меняется.
+>
+> Следующие шаги: `scraper`, `currency` и `notifier`.
 
 ## Возможности бота
 

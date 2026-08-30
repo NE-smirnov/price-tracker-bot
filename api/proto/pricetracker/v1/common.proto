@@ -78,6 +78,10 @@ message Stats {
   bool in_stock = 9;
   google.protobuf.Timestamp first_observed_at = 10;
   google.protobuf.Timestamp last_observed_at = 11;
+  // First sample of the window. trend and change_percent are derived from it;
+  // it is sent explicitly so a client can recompute them the same way instead
+  // of trusting two redundant fields to agree.
+  Money first = 12;
 }
 
 // Kind of alert produced for a tracked item.

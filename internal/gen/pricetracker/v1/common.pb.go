@@ -506,8 +506,12 @@ type Stats struct {
 	InStock         bool                   `protobuf:"varint,9,opt,name=in_stock,json=inStock,proto3" json:"in_stock,omitempty"`
 	FirstObservedAt *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=first_observed_at,json=firstObservedAt,proto3" json:"first_observed_at,omitempty"`
 	LastObservedAt  *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=last_observed_at,json=lastObservedAt,proto3" json:"last_observed_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// First sample of the window. trend and change_percent are derived from it;
+	// it is sent explicitly so a client can recompute them the same way instead
+	// of trusting two redundant fields to agree.
+	First         *Money `protobuf:"bytes,12,opt,name=first,proto3" json:"first,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Stats) Reset() {
@@ -617,6 +621,13 @@ func (x *Stats) GetLastObservedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Stats) GetFirst() *Money {
+	if x != nil {
+		return x.First
+	}
+	return nil
+}
+
 var File_pricetracker_v1_common_proto protoreflect.FileDescriptor
 
 const file_pricetracker_v1_common_proto_rawDesc = "" +
@@ -658,7 +669,7 @@ const file_pricetracker_v1_common_proto_rawDesc = "" +
 	"\bin_stock\x18\x05 \x01(\bR\ainStock\x12;\n" +
 	"\vobserved_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"observedAtB\x12\n" +
-	"\x10_converted_price\"\xf7\x03\n" +
+	"\x10_converted_price\"\xa5\x04\n" +
 	"\x05Stats\x12&\n" +
 	"\x0ftracked_item_id\x18\x01 \x01(\tR\rtrackedItemId\x120\n" +
 	"\acurrent\x18\x02 \x01(\v2\x16.pricetracker.v1.MoneyR\acurrent\x12(\n" +
@@ -671,7 +682,8 @@ const file_pricetracker_v1_common_proto_rawDesc = "" +
 	"\bin_stock\x18\t \x01(\bR\ainStock\x12F\n" +
 	"\x11first_observed_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\x0ffirstObservedAt\x12D\n" +
-	"\x10last_observed_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0elastObservedAt*L\n" +
+	"\x10last_observed_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0elastObservedAt\x12,\n" +
+	"\x05first\x18\f \x01(\v2\x16.pricetracker.v1.MoneyR\x05first*L\n" +
 	"\x05Trend\x12\x15\n" +
 	"\x11TREND_UNSPECIFIED\x10\x00\x12\f\n" +
 	"\bTREND_UP\x10\x01\x12\x0e\n" +
@@ -728,11 +740,12 @@ var file_pricetracker_v1_common_proto_depIdxs = []int32{
 	0,  // 12: pricetracker.v1.Stats.trend:type_name -> pricetracker.v1.Trend
 	7,  // 13: pricetracker.v1.Stats.first_observed_at:type_name -> google.protobuf.Timestamp
 	7,  // 14: pricetracker.v1.Stats.last_observed_at:type_name -> google.protobuf.Timestamp
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	2,  // 15: pricetracker.v1.Stats.first:type_name -> pricetracker.v1.Money
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_pricetracker_v1_common_proto_init() }
